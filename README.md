@@ -10,6 +10,8 @@ This library provides data validation functionalities designed to be used for HT
 
 ## Installation
 
+This library needs python 3.6 or higher.
+
 ```
 $ pip install dhampyr
 ```
@@ -105,7 +107,7 @@ assert d.c.a = 4
 
 `b` uses a tuple of a string and a function for the specifier of `Converter`. This style sets the name of the `Converter` with the string explicitly. By default, the name of the `Converter` described in error handling chapter is set to the value of `__name__` attribute of the function, that is why the name of the `Converter` specified by `int` is `int`. Although this default naming strategy works fine for normal functions, it is not suitable for the use of lambda expression. The tuple style specifier should be used in such cases to handle error correctly.
 
-`Conterter` for `c` is specified by a set of another validatable type `D`. This style declares the nested validation on the attribute, that is, the input for `c` is also a dictionary like object and the attribute `c` should be assigned with `D`'s instance obtained from the result of validation for `D`.
+`Converter` for `c` is specified by a set of another validatable type `D`. This style declares the nested validation on the attribute, that is, the input for `c` is also a dictionary like object and the attribute `c` should be assigned with `D`'s instance obtained from the result of validation for `D`.
 
 Additionally, by enclosing the specifier with `[]`, `Converter` considers the input as iterable values and applies converting function to a value got in each iteration. Next code let you understand this behavior easily.
 
@@ -158,3 +160,9 @@ assert list(p) == ["a", 1, "b", 2]
 ```
 
 As shown in the above example, `CompositeValidationFailure` can give you the complete information why and where the validation failed. This feature enables flexible conding associated with validation errors, for example, you can generate hierarchical JSON response, insert error messages to suitable positions of HTML pages and control behaviors of application in detail according to the cause of errors.
+
+## Flask support
+
+This library supports `werkzeug.datastructures.MultiDict` which is used in [Flask](http://flask.pocoo.org/docs/1.0/) to store request forms and queries. In addition to `dict`, the instance of `MultiDict` can be an input of `Validator`.
+
+In many web application frameworks, although form values and queries can associate multiple values with a single key, the request object tends to return a single value when accessed as a dictionary. To solve this inconsitency between `dict` and request object, this library first checks the input is `MultiDict` or not and change accessors according to the type of the input. Thus, you can give `request.form`, `request.args` and any other `MultiDict` values to `validate_dict`.
