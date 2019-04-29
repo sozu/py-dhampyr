@@ -1,0 +1,9 @@
+version: '3'
+services:
+  dhampyr:
+    build: .
+    image: dhampyr:develop
+    tty: true
+    volumes:
+      - .:/home/dhampyr
+    container_name: dhampyr
