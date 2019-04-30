@@ -130,6 +130,14 @@ class ValidationFailure(Exception):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
+    @property
+    def args(self):
+        return []
+
+    @property
+    def kwargs(self):
+        return {}
+
 def at(positions):
     def exp(i, p):
         if isinstance(p, str):
@@ -282,7 +290,9 @@ def converter(func):
                 r = validate_dict(t, v)
                 return r.or_else(throw)
             return Converter(name or t.__name__, g, it)
-        if isinstance(f, type) and issubclass(f, Enum):
+        elif isinstance(f, partial):
+            return Converter(f.func.__name__, f, it, *f.args, **f.keywords)
+        elif isinstance(f, type) and issubclass(f, Enum):
             # uses item access of the Enum.
             return Converter(name or f.__name__, f.__getitem__, it)
         elif isinstance(f, type):
@@ -326,6 +336,8 @@ def verifier(func):
 
     if isinstance(func, Verifier):
         return func
+    elif isinstance(func, partial):
+        return Verifier(func.func.__name__, func, is_iter, *func.args, **func.keywords)
     elif callable(func):
         return Verifier(func.__name__, func, is_iter)
     elif isinstance(func, tuple):
@@ -343,11 +355,21 @@ class ConversionFailure(ValidationFailure):
     def name(self):
         return self.converter.name
 
+    @property
+    def args(self):
+        return self.converter.args
+
+    @property
+    def kwargs(self):
+        return self.converter.kwargs
+
 class Converter:
-    def __init__(self, name, func, is_iter):
+    def __init__(self, name, func, is_iter, *args, **kwargs):
         self.name = name
         self.func = func
         self.is_iter = is_iter
+        self.args = args
+        self.kwargs = kwargs
 
     def convert(self, value):
         def conv(v):
@@ -384,11 +406,21 @@ class VerificationFailure(ValidationFailure):
     def name(self):
         return self.verifier.name
 
+    @property
+    def args(self):
+        return self.verifier.args
+
+    @property
+    def kwargs(self):
+        return self.verifier.kwargs
+
 class Verifier:
-    def __init__(self, name, func, is_iter):
+    def __init__(self, name, func, is_iter, *args, **kwargs):
         self.name = name
         self.func = func
         self.is_iter = is_iter
+        self.args = args
+        self.kwargs = kwargs
 
     def verify(self, value):
         def ver(v):

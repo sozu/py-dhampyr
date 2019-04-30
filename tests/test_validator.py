@@ -1,5 +1,6 @@
 import pytest
 from enum import Enum, auto
+from functools import partial
 from dhampyr.validator import *
 
 def test_convert_value():
@@ -203,6 +204,12 @@ def test_create_converter_iter():
     assert c.name == "c"
     assert c.convert(["1", "2", "3"])[0] == [1, 2, 3]
 
+def test_create_converter_partial():
+    c = converter(partial(int, base=2))
+    assert c.name == "int"
+    assert c.kwargs == {"base": 2}
+    assert c.convert("100")[0] == 4
+
 def test_create_verifier_func():
     def f(v):
         return v <= 1
@@ -229,3 +236,12 @@ def test_create_verifier_iter():
     assert v.name == "v"
     assert v.verify([-1, 0, 1]) is None
     assert v.verify([0, 1, 2]) is not None
+
+def test_create_verifier_partial():
+    def f(v, th):
+        return v < th
+    v = verifier(partial(f, th=3))
+    assert v.name == "f"
+    assert v.kwargs == {"th": 3}
+    assert v.verify(2) is None
+    assert v.verify(3).kwargs == {"th": 3}
