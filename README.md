@@ -51,7 +51,7 @@ assert d.a == 3
 
 Every error in the validation scheme is repreesented with `ValidationFailure` object which can be accessed via `failures` attribute of `ValidationResult`. `failures` attribute gives `CompositeValidationFailure` which behaves as both dictionary of errors and iterator of pairs of `ValidationPath` and error. The former is useful to know whether the validation succeeds or not on an attribute, and the latter provides a way to collect all errors in the validation scheme.
 
-Every kind of `ValidationFailure` has a `name` attribute which corresponds to the name of `Converter` or `Verifier` (described below) where the error happens. Therefore, it enables programmers to recognize the reason of the error.
+Every kind of `ValidationFailure` has a `name` attribute which corresponds to the name of `Converter` or `Verifier` (described below) where the error happens. Therefore, it enables programmers to recognize the reason of the error. `ValidationFailure` also has attributes `args` and `kwargs` which correspond to freezed arguments when `Converter` or `Verifier` is declared by using `functools.partial` as described below.
 
 ```
 def lt3(x):
@@ -71,9 +71,18 @@ assert r.failures["a"].name == "int"
 assert dict([(str(k), f.name) for k, f in r.failures]) == {"a": "int", "b": "lt3", "c": "gt1"}
 ```
 
+`ValidationResult` provides a method `or_else`, which returns the validated instance if validation succeeded, otherwise invokes a function with the validation error. This feature is useful especially when the application is developed on a framework which has its own exception handling functionalily.
+
+```
+def handle_error(e):
+    raise e
+
+d = r.or_else(handle_error)
+```
+
 ### Validator requiring input
 
-`+` operator let a `Validator` requires an input value and fails if it does not exist. The error on this constraint is represented with `MissingFailure` whose name is `missing`.
+`+` operator lets a `Validator` requires an input value and fails if it does not exist. The error on this constraint is represented with `MissingFailure` whose name is `missing`.
 
 ```
 class C:
@@ -89,27 +98,33 @@ assert r.failures["a"].name == "missing"
 As shown in next example, `Converter` can be declared by multiple styles besides by a function.
 
 ```
+from functools import partial as p
+
 class D:
     a: v(int) = 0
 
 class C:
     a: v(int) = 0
-    b: v(("first", lambda x: x.split(",")[0])) = None
-    c: v({D}) = None
+    b: v(p(int, base=2)) = 0
+    c: v(("first", lambda x: x.split(",")[0])) = None
+    d: v({D}) = None
 
-r = validate_dict(C, dict(a = "3", b = "a,b,c", c = dict(a = "4")))
+r = validate_dict(C, dict(a = "3", b = "101", c = "a,b,c", d = dict(a = "4")))
 d = r.get()
 
 assert d.a == 3
-assert d.b == "a"
-assert d.c.a = 4
+assert d.b == 5
+assert d.c == "a"
+assert d.d.a = 4
 ```
 
-`b` uses a tuple of a string and a function for the specifier of `Converter`. This style sets the name of the `Converter` with the string explicitly. By default, the name of the `Converter` described in error handling chapter is set to the value of `__name__` attribute of the function, that is why the name of the `Converter` specified by `int` is `int`. Although this default naming strategy works fine for normal functions, it is not suitable for the use of lambda expression. The tuple style specifier should be used in such cases to handle error correctly.
+Function created by `functools.partial` is available as shown in `Converter` of `b`. Freezed arguments, in this case `base = 2`, are available in the error handling.
 
-`Converter` for `c` is specified by a set of another validatable type `D`. This style declares the nested validation on the attribute, that is, the input for `c` is also a dictionary like object and the attribute `c` should be assigned with `D`'s instance obtained from the result of validation for `D`.
+`c` uses a tuple of a string and a function for the specifier of `Converter`. This style sets the name of the `Converter` with the string explicitly. By default, the name of the `Converter` described in error handling chapter is set to the value of `__name__` attribute of the function, that is why the name of the `Converter` specified by `int` is `int`. Although this default naming strategy works fine for normal functions, it is not suitable for the use of lambda expression. The tuple style specifier should be used in such cases to handle error correctly.
 
-Additionally, by enclosing the specifier with `[]`, `Converter` considers the input as iterable values and applies converting function to a value got in each iteration. Next code let you understand this behavior easily.
+`Converter` for `d` is specified by a set of another validatable type `D`. This style declares the nested validation on the attribute, that is, the input for `d` is also a dictionary like object and the attribute `d` should be assigned with `D`'s instance obtained from the result of validation for `D`.
+
+Additionally, by enclosing the specifier with `[]`, `Converter` considers the input as iterable values and applies converting function to a value got in each iteration. Next code lets you understand this behavior easily.
 
 ```
 class C:
@@ -130,13 +145,19 @@ Similarly to `Converter`, there also are multiple declaration styles for `Verifi
 def lt3(x):
     return x < 3
 
+def lt(x, threshold):
+    return x < threshold
+
 class C:
     a: v(int, lt3) = 0
-    b: v(int, ("less_than_3", lambda x: x < 3)) = 0
-    c: v([int], [lt3]) = []
+    b: v(int, p(lt, threshold = 3))
+    c: v(int, ("less_than_3", lambda x: x < 3)) = 0
+    d: v([int], [lt3]) = []
 ```
 
-The `Verifier` for `b` is declared by tuple which set the name of the `Verifier` to the first string, in this case `less_than_3`. By enclosing the specifier, `Verifier` considers the input as iterable values and applies verification function to each value respectively.
+`Verifier` can be declared by using `functools.partial` and freezed arguments will be set to `ValidationFailure` attributes when this `Verifier` causes error.
+
+The `Verifier` for `c` is declared by tuple which set the name of the `Verifier` to the first string, in this case `less_than_3`. By enclosing the specifier, `Verifier` considers the input as iterable values and applies verification function to each value respectively.
 
 ### Advanced error handling
 
