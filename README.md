@@ -4,9 +4,9 @@
 
 This library provides data validation functionalities designed to be used for HTTP applications. Compared to other validation libraries, this library has following features.
 
-- Validations are declared by annotations which is introduced in python 3.5.
-- Each validation can be composed of simple functions including lambda expressions.
-- Errors in validation scheme are represented with informative objects, not with just an error message.
+- Validation schemes are declared by annotations which is introduced in python 3.5.
+- Each validation scheme can be composed of simple functions including lambda expressions.
+- Errors in validations are represented with informative objects, not with just an error message.
 
 ## Installation
 
@@ -99,23 +99,30 @@ As shown in next example, `Converter` can be declared by multiple styles besides
 
 ```
 from functools import partial as p
+from enum import Enum, auto
 
 class D:
     a: v(int) = 0
+
+class E(Enum):
+    E1 = auto()
+    E2 = auto()
 
 class C:
     a: v(int) = 0
     b: v(p(int, base=2)) = 0
     c: v(("first", lambda x: x.split(",")[0])) = None
     d: v({D}) = None
+    e: v(E) = E.E1
 
-r = validate_dict(C, dict(a = "3", b = "101", c = "a,b,c", d = dict(a = "4")))
+r = validate_dict(C, dict(a = "3", b = "101", c = "a,b,c", d = dict(a = "4"), e = "E2"))
 d = r.get()
 
 assert d.a == 3
 assert d.b == 5
 assert d.c == "a"
-assert d.d.a = 4
+assert d.d.a == 4
+assert d.e == E.E2
 ```
 
 Function created by `functools.partial` is available as shown in `Converter` of `b`. Freezed arguments, in this case `base = 2`, are available in the error handling.
@@ -123,6 +130,8 @@ Function created by `functools.partial` is available as shown in `Converter` of 
 `c` uses a tuple of a string and a function for the specifier of `Converter`. This style sets the name of the `Converter` with the string explicitly. By default, the name of the `Converter` described in error handling chapter is set to the value of `__name__` attribute of the function, that is why the name of the `Converter` specified by `int` is `int`. Although this default naming strategy works fine for normal functions, it is not suitable for the use of lambda expression. The tuple style specifier should be used in such cases to handle error correctly.
 
 `Converter` for `d` is specified by a set of another validatable type `D`. This style declares the nested validation on the attribute, that is, the input for `d` is also a dictionary like object and the attribute `d` should be assigned with `D`'s instance obtained from the result of validation for `D`.
+
+On `e`, `Converter` is specified by `Enum` type. Input value for `e` is converted to `E` by its name, that is, `lambda x: E[x]` is the equivalent function.
 
 Additionally, by enclosing the specifier with `[]`, `Converter` considers the input as iterable values and applies converting function to a value got in each iteration. Next code lets you understand this behavior easily.
 
@@ -155,9 +164,7 @@ class C:
     d: v([int], [lt3]) = []
 ```
 
-`Verifier` can be declared by using `functools.partial` and freezed arguments will be set to `ValidationFailure` attributes when this `Verifier` causes error.
-
-The `Verifier` for `c` is declared by tuple which set the name of the `Verifier` to the first string, in this case `less_than_3`. By enclosing the specifier, `Verifier` considers the input as iterable values and applies verification function to each value respectively.
+`Verifier` can be declared by using `functools.partial` and freezed arguments will be set to `ValidationFailure` attributes when this `Verifier` causes error. The `Verifier` for `c` is declared by tuple which set the name of the `Verifier` to the first string, in this case `less_than_3`. By enclosing the specifier, `Verifier` considers the input as iterable values and applies verification function to each value respectively.
 
 ### Advanced error handling
 
