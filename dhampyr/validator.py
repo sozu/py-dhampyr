@@ -1,4 +1,5 @@
 from enum import Enum
+from collections import OrderedDict
 from functools import reduce, partial
 
 try:
@@ -73,9 +74,13 @@ def validate_dict(cls, values, *args, **kwargs):
         else:
             return d[k]
 
-    for k, v in filter(lambda kv: isinstance(kv[1], Validator), cls.__annotations__.items()):
+    context = ValidationContext()
+
+    targets = OrderedDict(filter(lambda kv: isinstance(kv[1], Validator), cls.__annotations__.items()))
+
+    for k, v in targets.items():
         if k in values:
-            validated, failure = v.validate(get(values, k, v.accept_list))
+            validated, failure = v.validate(get(values, k, v.accept_list), context.descend(k, v.accept_list))
             if failure:
                 failures.add(k, failure)
                 setattr(instance, k, getattr(cls, k))
@@ -86,7 +91,54 @@ def validate_dict(cls, values, *args, **kwargs):
                 failures.add(k, MissingFailure())
             setattr(instance, k, getattr(cls, k))
 
-    return ValidationResult(instance, failures)
+    # TODO: items() of MultiDict returns only first element associated with each key respectively.
+    for k, v in values.items():
+        if k not in targets:
+            context.remainders[k] = v
+
+    return ValidationResult(instance, failures, context)
+
+class ValidationContext:
+    class Holder:
+        def __init__(self):
+            self.remainders = {}
+
+    class Iterative:
+        def __init__(self):
+            self.contexts = []
+
+        def __getattr__(self, key):
+            return [getattr(c, key) for c in self.contexts]
+
+        def __getitem__(self, key):
+            if isinstance(key, int):
+                return self.contexts[key]
+            else:
+                return [c[key] for c in self.contexts]
+
+        def append(self):
+            c = ValidationContext()
+            self.contexts.append(c)
+            return c
+
+    def __init__(self):
+        self.holder = ValidationContext.Holder()
+        self.contexts = {}
+
+    def __getattr__(self, key):
+        return getattr(self.holder, key)
+
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            return self
+        else:
+            return self.contexts[key]
+
+    def descend(self, key, iterative):
+        if iterative:
+            return self.contexts.setdefault(key, ValidationContext.Iterative())
+        else:
+            return self.contexts.setdefault(key, ValidationContext())
 
 class ValidationResult:
     """
@@ -96,10 +148,13 @@ class ValidationResult:
     ----------
     failures: CompositeValidationfailure
         An object providing accessor of validation failures.
+    context: ValidtionContext
+        An object storing contextual values in an execution of `validate_dict`.
     """
-    def __init__(self, validated, failures):
+    def __init__(self, validated, failures, context):
         self.validated = validated
         self.failures = failures
+        self.context = context
 
     def get(self):
         """
@@ -232,7 +287,7 @@ class Validator:
     def accept_list(self):
         return self.converter.is_iter
 
-    def validate(self, value):
+    def validate(self, value, context=None):
         """
         Converts and verfies a value.
 
@@ -246,12 +301,12 @@ class Validator:
         (object, Exception)
             The pair of converted value (``None`` if the validation fails) and validation failure (``None`` if the validation succeeds).
         """
-        val, failure = self.converter.convert(value)
+        val, failure = self.converter.convert(value, context)
         if failure:
             return None, failure
 
         for verifier in self.verifiers:
-            f = verifier.verify(val)
+            f = verifier.verify(val, context)
             if f is not None:
                 return None, f
 
@@ -286,8 +341,9 @@ def converter(func):
         if isinstance(f, set):
             # runs nested validation with a type in the set.
             t = next(iter(f))
-            def g(v):
+            def g(v, cxt:ValidationContext):
                 r = validate_dict(t, v)
+                cxt.remainders.update(r.context.remainders)
                 return r.or_else(throw)
             return Converter(name or t.__name__, g, it)
         elif isinstance(f, partial):
@@ -363,6 +419,11 @@ class ConversionFailure(ValidationFailure):
     def kwargs(self):
         return self.converter.kwargs
 
+def contextual_invoke(f, v, context):
+    anns = f.__annotations__ if hasattr(f, "__annotations__") else {}
+    c = next(filter(lambda a: a[1] is ValidationContext, anns.items()), None)
+    return f(v, **{c[0]: context or ValidationContext()}) if c else f(v)
+
 class Converter:
     def __init__(self, name, func, is_iter, *args, **kwargs):
         self.name = name
@@ -371,10 +432,11 @@ class Converter:
         self.args = args
         self.kwargs = kwargs
 
-    def convert(self, value):
-        def conv(v):
+    def convert(self, value, context=None):
+        def conv(v, iterated=False):
             try:
-                return self.func(v), None
+                c = context if not iterated else context.append() if context else None
+                return contextual_invoke(self.func, v, c), None
             except ConversionFailure as e:
                 e.converter = e.converter or self
                 return None, e
@@ -384,7 +446,7 @@ class Converter:
                 return None, ConversionFailure(str(e), self)
 
         if self.is_iter:
-            vs = [conv(v) for v in value]
+            vs = [conv(v, True) for v in value]
             failures = [(i, f) for i, (v, f) in enumerate(vs) if f is not None]
             if len(failures) == 0:
                 return [v for v,f in vs], None
@@ -422,10 +484,12 @@ class Verifier:
         self.args = args
         self.kwargs = kwargs
 
-    def verify(self, value):
-        def ver(v):
+    def verify(self, value, context=None):
+        def ver(v, i=None):
             try:
-                return None if self.func(v) else VerificationFailure(f"Verification by {self.name} failed.", self)
+                c = context if i is None else context[i] if context else None
+                r = contextual_invoke(self.func, v, c)
+                return None if r else VerificationFailure(f"Verification by {self.name} failed.", self)
             except VerificationFailure as e:
                 e.verifier = e.verifier or self
                 return e
@@ -435,7 +499,8 @@ class Verifier:
                 return VerificationFailure(str(e), self)
 
         if self.is_iter:
-            failures = [(i, f) for i, f in enumerate(map(ver, value)) if f is not None]
+            #failures = [(i, f) for i, f in enumerate(map(lambda v: ver(v, True), value)) if f is not None]
+            failures = [(i, f) for i, f in [(i, ver(v, i)) for i, v in enumerate(value)] if f is not None]
             if len(failures) == 0:
                 return None
             else:

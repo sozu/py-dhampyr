@@ -157,3 +157,33 @@ def test_fail_nested_dict_on_parent():
     assert r.failures["p2"][0]["c2"][1].name == "c2"
     keyset = set([str(k) for k, f in r.failures])
     assert keyset == {"p1", "p2[0].c2[1]"}
+
+def test_context():
+    class C:
+        a: v(int) = 0
+    r = validate_dict(C, dict(a = "1", b = "a", c = dict(d="b")))
+    assert len(r.failures) == 0
+    assert r.get().a == 1
+    assert r.context.remainders == dict(b = "a", c = dict(d = "b"))
+
+def test_context_nested():
+    class D:
+        b: v(int, lambda x: x < 2) = 0
+    class C:
+        a: v({D}) = None
+    r = validate_dict(C, dict(a = dict(b = "1", c = "c"), b = "b"))
+    assert len(r.failures) == 0
+    assert r.get().a.b == 1
+    assert r.context.remainders == dict(b = "b")
+    assert r.context["a"].remainders == dict(c = "c")
+
+def test_context_iter_nested():
+    class D:
+        b: v(int, lambda x: x < 3) = 0
+    class C:
+        a: v([{D}]) = []
+    r = validate_dict(C, dict(a = [dict(b = "1", c = "c"), dict(b = "2", d = "d")], b = "b"))
+    assert len(r.failures) == 0
+    assert r.get().a[0].b == 1
+    assert r.context.remainders == dict(b = "b")
+    assert r.context["a"].remainders == [dict(c = "c"), dict(d = "d")]

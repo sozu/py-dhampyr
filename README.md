@@ -80,7 +80,7 @@ def handle_error(e):
 d = r.or_else(handle_error)
 ```
 
-### Validator requiring input
+### Requiring constraint
 
 `+` operator lets a `Validator` requires an input value and fails if it does not exist. The error on this constraint is represented with `MissingFailure` whose name is `missing`.
 
@@ -165,6 +165,29 @@ class C:
 ```
 
 `Verifier` can be declared by using `functools.partial` and freezed arguments will be set to `ValidationFailure` attributes when this `Verifier` causes error. The `Verifier` for `c` is declared by tuple which set the name of the `Verifier` to the first string, in this case `less_than_3`. By enclosing the specifier, `Verifier` considers the input as iterable values and applies verification function to each value respectively.
+
+### Undeclared items
+
+This library just ignores items in input dictionary whose keys are not declared in the validatable type. They remain in the `ValidationContext` which can be accessed via `context` attribute of the result. When the validatable type is nested, `ValidationContext` takes hierarchical form providing key access. Also, when nested type is validated in iterative context, index access is available. Next example shows ways to get undeclared items in various cases.
+
+```
+class D:
+    d: v(int) = 0
+
+class C:
+    a: v(int) = 0
+    b: v{{D}) = None
+    c: v([{D}]) = []
+
+r = validate_dict(C, dict(a = "1", b = dict(d = "2", e = "a"), c = [dict(d = "3", e1 = "b"), dict(d = "4", e2 = "c")], d = "d"))
+cxt = r.context
+
+assert cxt.remainders == dict(d = "d")
+assert cxt["b"].remainders == dict(e = "a")
+assert cxt["c"].remainders == [dict(e1 = "b"), dict(e2 = "c")]
+assert cxt["c"][0].remainders == dict(e1 = "b")
+assert cxt["c"][1].remainders == dict(e2 = "c")
+```
 
 ### Advanced error handling
 
