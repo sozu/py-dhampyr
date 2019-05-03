@@ -176,7 +176,7 @@ class D:
 
 class C:
     a: v(int) = 0
-    b: v{{D}) = None
+    b: v({D}) = None
     c: v([{D}]) = []
 
 r = validate_dict(C, dict(a = "1", b = dict(d = "2", e = "a"), c = [dict(d = "3", e1 = "b"), dict(d = "4", e2 = "c")], d = "d"))
