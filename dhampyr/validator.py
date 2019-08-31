@@ -3,7 +3,7 @@ from collections import OrderedDict
 from functools import reduce, partial
 
 try:
-    from werkzeug.datastructure import MultiDict
+    from werkzeug.datastructures import MultiDict
     is_multidict = lambda d: isinstance(d, MultiDict)
 except ImportError:
     is_multidict = lambda d: False
