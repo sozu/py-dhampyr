@@ -89,7 +89,8 @@ def validate_dict(cls, values, *args, **kwargs):
         else:
             if v.requires:
                 failures.add(k, MissingFailure())
-            setattr(instance, k, getattr(cls, k))
+            if hasattr(cls, k):
+                setattr(instance, k, getattr(cls, k))
 
     # TODO: items() of MultiDict returns only first element associated with each key respectively.
     for k, v in values.items():

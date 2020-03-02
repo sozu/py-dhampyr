@@ -68,6 +68,17 @@ def test_validate_dict_fail_verify():
     assert isinstance(r.failures["a3"], VerificationFailure)
     assert isinstance(r.failures["a4"], VerificationFailure)
 
+class U:
+    u1: +v(int)
+    u2: v(int)
+
+def test_undef_prop_mising():
+    r = validate_dict(U, dict())
+    assert len(r.failures) == 1
+    assert isinstance(r.failures["u1"], MissingFailure)
+    assert not hasattr(r, "u1")
+    assert not hasattr(r, "u2")
+
 class W:
     b1: +v([int]) = None
     b2: +v([int], ("v21", lambda x: len(x) > 2), ("v22", lambda x: len(x) < 4)) = None
