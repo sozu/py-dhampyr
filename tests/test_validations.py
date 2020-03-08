@@ -3,14 +3,14 @@ from dhampyr.validator import *
 
 def test_create_validator_no_verifiers():
     val = v(int)
-    assert not val.requires
+    assert val.requirement.missing == RequirementPolicy.SKIP
     assert len(val.verifiers) == 0
     assert val.validate("1")[0] == 1
     assert isinstance(val.validate("a")[1], ConversionFailure)
 
 def test_create_validator_one_verifier():
     val = v(int, lambda x: x <= 1)
-    assert not val.requires
+    assert val.requirement.missing == RequirementPolicy.SKIP
     assert len(val.verifiers) == 1
     assert val.validate("1")[0] == 1
     assert isinstance(val.validate("2")[1], VerificationFailure)
@@ -18,14 +18,14 @@ def test_create_validator_one_verifier():
 def test_create_validator_multi_verifiers():
     v1, v2 = lambda x: x >= 0, lambda x: x <= 1
     val = v(int, v1, v2)
-    assert not val.requires
+    assert val.requirement.missing == RequirementPolicy.SKIP
     assert len(val.verifiers) == 2
     assert val.validate("1")[0] == 1
     assert val.validate("2")[1].verifier is val.verifiers[1]
 
 def test_create_validator_requires():
     val = +v(int)
-    assert val.requires
+    assert val.requirement.missing == RequirementPolicy.FAIL
 
 class V:
     a1: +v(int) = None

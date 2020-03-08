@@ -1,145 +1,40 @@
 from enum import Enum
 from collections import OrderedDict
 from functools import reduce, partial
+from .requirement import Requirement, RequirementPolicy, MissingFailure
 
-try:
-    from werkzeug.datastructures import MultiDict
-    is_multidict = lambda d: isinstance(d, MultiDict)
-except ImportError:
-    is_multidict = lambda d: False
+from .failures import ValidationFailure, CompositeValidationFailure
+from .converter import Converter, ConversionFailure
+from .verifier import Verifier, VerificationFailure
+from .context import ValidationContext
 
-def v(conv, *vers):
-    """
-    Creates a `Validator`.
 
-    Parameters
-    ----------
-    conv: Converter equivalent
-        Value available for the argument of `converter`.
-    vers: [Verifier equivalents]
-        Values available for the argument of `verifier`.
+# for compatibility
+v = None
+validate_dict = None
+converter = None
+verifier = None
 
-    Returns
-    -------
-    Validator
-        Created `Validator`.
-    """
-    c = converter(conv)
-    vs = list(map(verifier, vers))
-    return Validator(c, vs)
 
-def validate_dict(cls, values, *args, **kwargs):
-    """
-    Creates an instance of `cls` from dictionary-like object.
+__all__ = [
+    "ValidationResult",
+    "Validator",
+    "Requirement",
+    "RequirementPolicy",
+    "MissingFailure",
+    "v",
+    "validate_dict",
+    "converter",
+    "verifier",
+    "ValidationFailure",
+    "CompositeValidationFailure",
+    "Converter",
+    "ConversionFailure",
+    "Verifier",
+    "VerificationFailure",
+    "ValidationContext",
+]
 
-    Names of attributes declared in `cls` and annotated with `Validator` are used as keys of `values`.
-    Each `Validator` converts and verifies a value obtained from `values` with the key and, if valid, assigns the converted value to craated instance of `cls` as an attribute.
-    In case the validation fails, declared value of the attribute is assigned instead.
-
-    Parameters
-    ----------
-    cls: type
-        Type of instance to create.
-    values: dict
-        Dictionay-like object.
-    args, kwargs: list, dict
-        Optional arguments which are propagated to the constructor of `cls`.
-
-    Returns
-    -------
-    ValidationResult
-        An object having created instance and error informations.
-
-    Examples
-    --------
-    >>> class C:
-    ...     a: +v(int) = 0
-    ...     b: +v(int) = 1
-    ...     c: v(int) = 2
-    ...     d: v(int, lambda x: x < 0) = 3
-    ...
-    >>> r = validate_dict(C, dict(a = "1", c = "a", d = "1"))
-    >>> x = r.get()
-    >>> type(x)
-    <class '__main__.C'>
-    >>> (x.a, x.b, x.c, x.d)
-    (1, 1, 2, 3)
-    """
-    instance = cls(*args, *kwargs)
-    failures = CompositeValidationFailure()
-
-    def get(d, k, as_list):
-        if as_list:
-            return d.getlist(k) if is_multidict(d) else d[k]
-        else:
-            return d[k]
-
-    context = ValidationContext()
-
-    targets = OrderedDict(filter(lambda kv: isinstance(kv[1], Validator), cls.__annotations__.items()))
-
-    for k, v in targets.items():
-        if k in values:
-            validated, failure = v.validate(get(values, k, v.accept_list), context.descend(k, v.accept_list))
-            if failure:
-                failures.add(k, failure)
-                setattr(instance, k, getattr(cls, k))
-            else:
-                setattr(instance, k, validated)
-        else:
-            if v.requires:
-                failures.add(k, MissingFailure())
-            if hasattr(cls, k):
-                setattr(instance, k, getattr(cls, k))
-
-    # TODO: items() of MultiDict returns only first element associated with each key respectively.
-    for k, v in values.items():
-        if k not in targets:
-            context.remainders[k] = v
-
-    return ValidationResult(instance, failures, context)
-
-class ValidationContext:
-    class Holder:
-        def __init__(self):
-            self.remainders = {}
-
-    class Iterative:
-        def __init__(self):
-            self.contexts = []
-
-        def __getattr__(self, key):
-            return [getattr(c, key) for c in self.contexts]
-
-        def __getitem__(self, key):
-            if isinstance(key, int):
-                return self.contexts[key]
-            else:
-                return [c[key] for c in self.contexts]
-
-        def append(self):
-            c = ValidationContext()
-            self.contexts.append(c)
-            return c
-
-    def __init__(self):
-        self.holder = ValidationContext.Holder()
-        self.contexts = {}
-
-    def __getattr__(self, key):
-        return getattr(self.holder, key)
-
-    def __getitem__(self, key):
-        if isinstance(key, int):
-            return self
-        else:
-            return self.contexts[key]
-
-    def descend(self, key, iterative):
-        if iterative:
-            return self.contexts.setdefault(key, ValidationContext.Iterative())
-        else:
-            return self.contexts.setdefault(key, ValidationContext())
 
 class ValidationResult:
     """
@@ -182,110 +77,61 @@ class ValidationResult:
         else:
             return handler(self.failures)
 
-class ValidationFailure(Exception):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-    @property
-    def args(self):
-        return []
-
-    @property
-    def kwargs(self):
-        return {}
-
-def at(positions):
-    def exp(i, p):
-        if isinstance(p, str):
-            return p if i == 0 else f".{p}"
-        elif isinstance(p, int):
-            return f"[{p}]"
-        else:
-            return ""
-    return ''.join([exp(i, p) for i, p in enumerate(positions)])
-
-class ValidationPath:
-    def __init__(self, path):
-        self.path = path
-
-    def __iter__(self):
-        return iter(self.path)
-
-    def __repr__(self):
-        return at(self.path)
-
-class CompositeValidationFailure(ValidationFailure):
-    """
-    This type stores validation failures and provides ways to access them.
-
-    Examples
-    --------
-    >>> class C:
-    ...     a: +v(int) = 0
-    ...     b: +v(int) = 0
-    ...
-    >>> r = validate_dict(C, dict(a = "a"))
-
-    You can get a `ValidationFailure` by accessing with attribute name.
-
-    >>> r.failures['a'].name
-    'int'
-    >>> r.failures['b'].name
-    'missing'
-
-    Failures are traversable in iteration context.
-
-    >>> dict(map(lambda f: (f[0], f[1].name), r))
-    {'a': 'int', 'b': 'missing'}
-    """
-    def __init__(self):
-        super().__init__()
-        self.failures = {}
-
-    def __iter__(self, pos=[]):
-        for k, f in self.failures.items():
-            p = pos + [k]
-            if isinstance(f, CompositeValidationFailure):
-                for g in f.__iter__(p):
-                    yield g
-            else:
-                yield (ValidationPath(p), f)
-
-    def __len__(self):
-        return len(self.failures)
-
-    def __getitem__(self, key):
-        return self.failures[key]
-
-    def __contains__(self, key):
-        return key in self.failures
-
-    def add(self, key, f):
-        self.failures[key] = f
-
-class MissingFailure(ValidationFailure):
-    """
-    Validation failure representing that a required attribute is not found.
-    """
-    def __init__(self):
-        super().__init__("This value is required.")
-
-    @property
-    def name(self):
-        return "missing"
 
 class Validator:
-    def __init__(self, converter, verifiers, requires=False):
+    """
+    Validator provides a functionality to apply validation rules to a value.
+
+    Validation is classified into 3 phases each of which corresponds to an attribute of `Validator` object.
+    """
+    def __init__(self, requirement, converter, verifiers):
+        self.requirement = requirement
         self.converter = converter
         self.verifiers = verifiers
-        self.requires = requires
 
     def __pos__(self):
-        self.requires = True
+        self.requirement.missing = RequirementPolicy.FAIL
+        self.requirement.null = RequirementPolicy.FAIL
+        self.requirement.empty = RequirementPolicy.FAIL
+        return self
+
+    def __and__(self, null_empty):
+        if null_empty is None:
+            self.requirement.null = RequirementPolicy.FAIL
+        elif null_empty is Ellipsis:
+            self.requirement.empty = RequirementPolicy.FAIL
+        else:
+            raise ValueError(f"Only None or Ellipsis(...) is available with bit-wise operation to Validator.")
+        return self
+
+    def __or__(self, null_empty):
+        if null_empty is None:
+            self.requirement.null = RequirementPolicy.CONTINUE
+        elif null_empty is Ellipsis:
+            self.requirement.empty = RequirementPolicy.CONTINUE
+        else:
+            raise ValueError(f"Only None or Ellipsis(...) is available with bit-wise operation to Validator.")
+        return self
+
+    def __xor__(self, null_empty):
+        if null_empty is None:
+            self.requirement.null = RequirementPolicy.SKIP
+        elif null_empty is Ellipsis:
+            self.requirement.empty = RequirementPolicy.SKIP
+        else:
+            raise ValueError(f"Only None or Ellipsis(...) is available with bit-wise operation to Validator.")
         return self
 
     @property
     def accept_list(self):
+        """
+        Returns whether this validator accepts an input value as a list.
+
+        Returns
+        -------
+        bool
+            `True` if this validator accepts an input value as a list, otherwise `False`.
+        """
         return self.converter.is_iter
 
     def validate(self, value, context=None):
@@ -296,218 +142,36 @@ class Validator:
         ----------
         value: object
             An input value.
+        context: ValidationContext
+            Context for this value.
 
         Returns
         -------
-        (object, Exception)
-            The pair of converted value (``None`` if the validation fails) and validation failure (``None`` if the validation succeeds).
+        object
+            Validated value if validation succeeded, otherwise `None`.
+        ValidationFailure
+            `ValidationFailure` if validation failed, otherwise `None`.
+        bool
+            A flag to notify caller to use alternative value.
         """
+        joint_failure = not context or context.joint_failure
+
+        failure, to_continue = self.requirement.validate(value)
+
+        if not to_continue:
+            return None, failure, True
+
         val, failure = self.converter.convert(value, context)
+
         if failure:
-            return None, failure
+            return None if joint_failure else val, failure, joint_failure
 
         for verifier in self.verifiers:
             f = verifier.verify(val, context)
             if f is not None:
-                return None, f
+                if not joint_failure and verifier.is_iter:
+                    return [None if (i in f) else v for i, v in enumerate(val)], f, False
+                else:
+                    return None, f, True
 
-        return val, None
-
-def converter(func):
-    """
-    Creates a `Converter` by given specifier.
-
-    Parameters
-    ----------
-    func: spec, [spec], (str, spec), [(str, spec)]
-        The specifier of `Converter` which can take various forms and determines the attributes and behaviors of `Converter`.
-        When it is declared as a list having a specifier,
-        the `Converter` deals with an input as iterable object and tries to apply inner converting function to each value.
-        If a tuple of string and specifier is given, the string is used as the name of the `Converter`. 
-        Otherwise, its name is determined by `__name__` attribute of the specifier object.
-        The specifier object which corresponds to a converting function also can take various forms as follows.
-        - If `Enum`, the `Converter` converts a value to the `Enum` type via item access.
-        - If `callable`, it is used as the converting function of the `Converter`.
-        - If a `set` of a type, the `Converter` invokes `validate_dict` with the type and input value, that is, executes nested validation.
-
-    Returns
-    -------
-    Converter
-        Created `Converter`.
-    """
-    def throw(e):
-        raise e
-
-    def to_converter(f, it, name=None):
-        if isinstance(f, set):
-            # runs nested validation with a type in the set.
-            t = next(iter(f))
-            def g(v, cxt:ValidationContext):
-                r = validate_dict(t, v)
-                cxt.remainders.update(r.context.remainders)
-                return r.or_else(throw)
-            return Converter(name or t.__name__, g, it)
-        elif isinstance(f, partial):
-            return Converter(f.func.__name__, f, it, *f.args, **f.keywords)
-        elif isinstance(f, type) and issubclass(f, Enum):
-            # uses item access of the Enum.
-            return Converter(name or f.__name__, f.__getitem__, it)
-        elif isinstance(f, type):
-            # invokes constructor.
-            return Converter(name or f.__name__, f, it)
-        elif callable(f):
-            # invokes function.
-            return Converter(name or f.__name__, f, it)
-        else:
-            raise TypeError("Given value is not valid Converter specifier.")
-
-    func, is_iter = (func[0], True) if isinstance(func, list) else (func, False)
-
-    if isinstance(func, Converter):
-        return func
-    elif isinstance(func, tuple) and len(func) == 2:
-        return to_converter(func[1], is_iter, name=func[0])
-    else:
-        return to_converter(func, is_iter)
-
-def verifier(func):
-    """
-    Creates a `Verifier` by given specifier.
-
-    Parameters
-    ----------
-    func: callable, [callable], (str, callable), [(str, callable)]
-        The specifier of `Verifier` which can take various forms and determines the attributes and behaviors of `Verifier`.
-        When it is declared as a list having a specifier,
-        the `Verifier` deals with an input as iterable object and tries to apply inner verifying function to each value.
-        If a tuple of string and callable is given, the string is used as the name of the `Verifier`. 
-        Otherwise, its name is determined by `__name__` attribute of the callable object.
-        The callable should be a function taking an input and returns boolean value representing the result of the verification.
-
-    Returns
-    -------
-    Verifier
-        Created `Verifier`.
-    """
-    func, is_iter = (func[0], True) if isinstance(func, list) else (func, False)
-
-    if isinstance(func, Verifier):
-        return func
-    elif isinstance(func, partial):
-        return Verifier(func.func.__name__, func, is_iter, *func.args, **func.keywords)
-    elif callable(func):
-        return Verifier(func.__name__, func, is_iter)
-    elif isinstance(func, tuple):
-        return Verifier(func[0], func[1], is_iter)
-    else:
-        raise TypeError("Given value is not valid Verifier specifier.")
-
-class ConversionFailure(ValidationFailure):
-    def __init__(self, message, converter=None):
-        super().__init__(message)
-        self.message = message
-        self.converter = converter
-
-    @property
-    def name(self):
-        return self.converter.name
-
-    @property
-    def args(self):
-        return self.converter.args
-
-    @property
-    def kwargs(self):
-        return self.converter.kwargs
-
-def contextual_invoke(f, v, context):
-    anns = f.__annotations__ if hasattr(f, "__annotations__") else {}
-    c = next(filter(lambda a: a[1] is ValidationContext, anns.items()), None)
-    return f(v, **{c[0]: context or ValidationContext()}) if c else f(v)
-
-class Converter:
-    def __init__(self, name, func, is_iter, *args, **kwargs):
-        self.name = name
-        self.func = func
-        self.is_iter = is_iter
-        self.args = args
-        self.kwargs = kwargs
-
-    def convert(self, value, context=None):
-        def conv(v, iterated=False):
-            try:
-                c = context if not iterated else context.append() if context else None
-                return contextual_invoke(self.func, v, c), None
-            except ConversionFailure as e:
-                e.converter = e.converter or self
-                return None, e
-            except ValidationFailure as e:
-                return None, e
-            except Exception as e:
-                return None, ConversionFailure(str(e), self)
-
-        if self.is_iter:
-            vs = [conv(v, True) for v in value]
-            failures = [(i, f) for i, (v, f) in enumerate(vs) if f is not None]
-            if len(failures) == 0:
-                return [v for v,f in vs], None
-            else:
-                composite = CompositeValidationFailure()
-                for i, f in failures:
-                    composite.add(i, f)
-                return None, composite
-        else:
-            return conv(value)
-
-class VerificationFailure(ValidationFailure):
-    def __init__(self, message, verifier=None):
-        super().__init__(message)
-        self.message = message
-        self.verifier = verifier
-
-    @property
-    def name(self):
-        return self.verifier.name
-
-    @property
-    def args(self):
-        return self.verifier.args
-
-    @property
-    def kwargs(self):
-        return self.verifier.kwargs
-
-class Verifier:
-    def __init__(self, name, func, is_iter, *args, **kwargs):
-        self.name = name
-        self.func = func
-        self.is_iter = is_iter
-        self.args = args
-        self.kwargs = kwargs
-
-    def verify(self, value, context=None):
-        def ver(v, i=None):
-            try:
-                c = context if i is None else context[i] if context else None
-                r = contextual_invoke(self.func, v, c)
-                return None if r else VerificationFailure(f"Verification by {self.name} failed.", self)
-            except VerificationFailure as e:
-                e.verifier = e.verifier or self
-                return e
-            except ValidationFailure as e:
-                return e
-            except Exception as e:
-                return VerificationFailure(str(e), self)
-
-        if self.is_iter:
-            #failures = [(i, f) for i, f in enumerate(map(lambda v: ver(v, True), value)) if f is not None]
-            failures = [(i, f) for i, f in [(i, ver(v, i)) for i, v in enumerate(value)] if f is not None]
-            if len(failures) == 0:
-                return None
-            else:
-                composite = CompositeValidationFailure()
-                for i, f in failures:
-                    composite.add(i, f)
-                return composite
-        else:
-            return ver(value)
+        return val, None, False

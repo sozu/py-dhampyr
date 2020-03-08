@@ -1,247 +1,218 @@
 import pytest
 from enum import Enum, auto
 from functools import partial
-from dhampyr.validator import *
+from dhampyr.failures import ValidationFailure, CompositeValidationFailure
+from dhampyr.requirement import Requirement, RequirementPolicy, VALUE_MISSING, MissingFailure, NullFailure, EmptyFailure
+from dhampyr.context import ValidationContext, IterativeContext
+from dhampyr.converter import Converter, ConversionFailure
+from dhampyr.verifier import Verifier, VerificationFailure
+from dhampyr.validator import Validator
 
-def test_convert_value():
-    c = Converter("a", int, False)
-    r, f = c.convert("1")
-    assert r == 1
-    assert f is None
 
-def test_fail_convert_value():
-    c = Converter("a", int, False)
-    r, f = c.convert("a")
-    assert r is None
-    assert isinstance(f, ConversionFailure)
-    assert f.converter is c
+class TestRequirement:
+    def _validator(self):
+        return Validator(
+            Requirement(
+                missing=RequirementPolicy.SKIP,
+                null=RequirementPolicy.SKIP,
+                empty=RequirementPolicy.SKIP,
+            ),
+            Converter("conv", lambda x:x, False),
+            [],
+        )
 
-def test_convert_iterable():
-    c = Converter("a", int, True)
-    r, f = c.convert(["1", "2", "3"])
-    assert r == [1, 2, 3]
-    assert f is None
+    def test_missing_fail(self):
+        v = +(self._validator())
+        r, f, b = v.validate(VALUE_MISSING)
+        assert r is None
+        assert isinstance(f, MissingFailure)
+        assert b
 
-def test_fail_convert_iterable():
-    c = Converter("a", int, False)
-    r, f = c.convert(["1", "a", "3"])
-    assert r is None
-    assert isinstance(f, ConversionFailure)
-    assert f.converter is c
+    def test_missing_skip(self):
+        v = self._validator()
+        r, f, b = v.validate(VALUE_MISSING)
+        assert r is None
+        assert f is None
+        assert b
 
-def test_general_exception_in_convert():
-    def ex(x):
-        raise ValueError("test")
-    c = Converter("a", ex, False)
-    r, f = c.convert("a")
-    assert isinstance(f, ConversionFailure)
-    assert f.converter is c
-    assert f.message == "test"
+    def test_null_fail(self):
+        v = self._validator() & None
+        r, f, b = v.validate(None)
+        assert r is None
+        assert isinstance(f, NullFailure)
+        assert b
 
-def test_defined_exception_in_convert():
-    def ex(x):
-        raise ConversionFailure("test", None)
-    c = Converter("a", ex, False)
-    r, f = c.convert("a")
-    assert isinstance(f, ConversionFailure)
-    assert f.converter is c
-    assert f.message == "test"
+    def test_null_skip(self):
+        v = self._validator() ^ None
+        r, f, b = v.validate(None)
+        assert r is None
+        assert f is None
+        assert b
 
-def test_verify_value():
-    v = Verifier("a", lambda x: len(x) == 3, False)
-    f = v.verify("abc")
-    assert f is None
+    def test_null_continue(self):
+        v = self._validator() | None
+        r, f, b = v.validate(None)
+        assert r is None
+        assert f is None
+        assert not b
 
-def test_fail_verify_value():
-    v = Verifier("a", lambda x: len(x) == 3, False)
-    f = v.verify("ab")
-    assert isinstance(f, VerificationFailure)
-    assert f.verifier is v
+    def test_empty_fail(self):
+        v = self._validator() & ...
+        r, f, b = v.validate("")
+        assert r is None
+        assert isinstance(f, EmptyFailure)
+        assert b
 
-def test_verify_iterable():
-    v = Verifier("a", lambda x: len(x) == 3, True)
-    f = v.verify(["abc", "def", "ghi"])
-    assert f is None
+    def test_empty_skip(self):
+        v = self._validator() ^ ...
+        r, f, b = v.validate("")
+        assert r is None
+        assert f is None
+        assert b
 
-def test_fail_verify_iterable():
-    v = Verifier("a", lambda x: len(x) == 3, True)
-    f = v.verify(["abc", "de", "fhi"])
-    assert isinstance(f[1], VerificationFailure)
-    assert f[1].verifier is v
+    def test_empty_continue(self):
+        v = self._validator() | ...
+        r, f, b = v.validate("")
+        assert r == ""
+        assert f is None
+        assert not b
 
-def test_general_exception_in_verify():
-    def ex(x):
-        raise ValueError("test")
-    v = Verifier("a", ex, False)
-    f = v.verify("a")
-    assert isinstance(f, VerificationFailure)
-    assert f.verifier is v
-    assert f.message == "test"
+    def test_exist(self):
+        v = self._validator()
+        r, f, b = v.validate("1")
+        assert r == "1"
+        assert f is None
+        assert not b
 
-def test_defined_exception_in_verify():
-    def ex(x):
-        raise VerificationFailure("test", None)
-    v = Verifier("a", ex, False)
-    f = v.verify("a")
-    assert isinstance(f, VerificationFailure)
-    assert f.verifier is v
-    assert f.message == "test"
 
-def test_validate_value():
-    d = Validator(Converter("c", int, False), [
-        Verifier("v", lambda x: x > 0, False)
-    ])
-    assert not d.accept_list
-    r, f = d.validate("1")
-    assert r == 1
-    assert f is None
+class TestConvert:
+    def _validator(self):
+        return Validator(
+            Requirement(),
+            Converter("conv", int, False),
+            [],
+        )
 
-def test_validate_iterable():
-    d = Validator(Converter("c", int, True), [
-        Verifier("v", lambda x: x > 0, True)
-    ])
-    assert d.accept_list
-    r, f = d.validate(["1", "2", "3"])
-    assert r == [1, 2, 3]
-    assert f is None
+    def test_convert(self):
+        v = self._validator()
+        r, f, b = v.validate("1")
+        assert r == 1
+        assert f is None
+        assert not b
 
-def test_validate_multiple_verifier():
-    v1, v2 = Verifier("v", lambda x: x > 0, False), Verifier("v", lambda x: x < 4, False)
-    d = Validator(Converter("c", int, False), [v1, v2])
-    r, f = d.validate("2")
-    assert r == 2
-    assert f is None
+    def test_fail(self):
+        v = self._validator()
+        r, f, b = v.validate("a")
+        assert r is None
+        assert f.name == "conv"
+        assert b
 
-def test_fail_validate_multiple_verifier():
-    v1, v2 = Verifier("v", lambda x: x > 0, False), Verifier("v", lambda x: x < 4, False)
-    d = Validator(Converter("c", int, False), [v1, v2])
-    r, f = d.validate("4")
-    assert r is None
-    assert isinstance(f, VerificationFailure)
-    assert f.verifier is v2
 
-def test_validate_value_to_iterable():
-    d = Validator(Converter("c", lambda x: x.split(','), False), [
-        Verifier("v", lambda x: int(x) > 0, True)
-    ])
-    assert not d.accept_list
-    r, f = d.validate("1,2,3")
-    assert r == ["1", "2", "3"]
-    assert f is None
+class TestIterativeConvert:
+    def _validator(self):
+        return Validator(
+            Requirement(),
+            Converter("conv", int, True),
+            [],
+        )
 
-def test_validate_iterable_to_value():
-    d = Validator(Converter("c", int, True), [
-        Verifier("v", lambda x: len(x) == 3, False)
-    ])
-    assert d.accept_list
-    r, f = d.validate(["1", "2", "3"])
-    assert r == [1, 2, 3]
-    assert f is None
+    def test_convert(self):
+        v = self._validator()
+        r, f, b = v.validate(["1", "2", "3"])
+        assert r == [1, 2, 3]
+        assert f is None
+        assert not b
 
-def test_fail_validate_value_on_convert():
-    d = Validator(Converter("c", int, False), [
-        Verifier("v", lambda x: x > 0, False)
-    ])
-    r, f = d.validate("a")
-    assert r is None
-    assert isinstance(f, ConversionFailure)
+    def test_fail(self):
+        v = self._validator()
+        r, f, b = v.validate(["1", "a", "3"])
+        assert r is None
+        assert f[1].name == "conv"
+        assert b
 
-def test_fail_validate_iterable_on_convert():
-    d = Validator(Converter("c", int, True), [
-        Verifier("v", lambda x: x > 0, True)
-    ])
-    r, f = d.validate(["1", "a", "3"])
-    assert r is None
-    assert isinstance(f[1], ConversionFailure)
+    def test_fail_unjointed(self):
+        v = self._validator()
+        cxt = IterativeContext()
+        cxt.joint_failure = False
+        r, f, b = v.validate(["1", "a", "3"], cxt)
+        assert r == [1, None, 3]
+        assert f[1].name == "conv"
+        assert not b
 
-def test_fail_validate_value_on_verify():
-    d = Validator(Converter("c", int, False), [
-        Verifier("v", lambda x: x > 0, False)
-    ])
-    r, f = d.validate("-1")
-    assert r is None
-    assert isinstance(f, VerificationFailure)
 
-def test_fail_validate_iterable_on_verify():
-    d = Validator(Converter("c", int, True), [
-        Verifier("v", lambda x: x > 0, True)
-    ])
-    r, f = d.validate(["1", "-2", "3"])
-    assert r is None
-    assert isinstance(f[1], VerificationFailure)
+class TestVerify:
+    def _validator(self):
+        return Validator(
+            Requirement(),
+            Converter("conv", lambda x:x, False),
+            [Verifier("gt", lambda x: x > 0, False), Verifier("lt", lambda x: x < 10, False)],
+        )
 
-def test_create_converter_func():
-    def f(v):
-        return int(v)
-    c = converter(f)
-    assert not c.is_iter
-    assert c.name == "f"
-    assert c.convert("1")[0] == 1
+    def test_verify(self):
+        v = self._validator()
+        r, f, b = v.validate(1)
+        assert r == 1
+        assert f is None
+        assert not b
 
-def test_create_converter_type():
-    c = converter(int)
-    assert not c.is_iter
-    assert c.name == "int"
-    assert c.convert("1")[0] == 1
+    def test_fail_gt(self):
+        v = self._validator()
+        r, f, b = v.validate(-1)
+        assert r is None
+        assert f.name == "gt"
+        assert b
 
-def test_create_converter_enum():
-    class E(Enum):
-        E1 = auto()
-    c = converter(E)
-    assert not c.is_iter
-    assert c.name == "E"
-    assert c.convert("E1")[0] == E.E1
+    def test_fail_lt(self):
+        v = self._validator()
+        r, f, b = v.validate(10)
+        assert r is None
+        assert f.name == "lt"
+        assert b
 
-def test_create_converter_tuple():
-    c = converter(("c", lambda x: int(x)))
-    assert not c.is_iter
-    assert c.name == "c"
-    assert c.convert("1")[0] == 1
 
-def test_create_converter_iter():
-    c = converter([("c", lambda x: int(x))])
-    assert c.is_iter
-    assert c.name == "c"
-    assert c.convert(["1", "2", "3"])[0] == [1, 2, 3]
+class TestIterativeVerify:
+    def _validator(self):
+        return Validator(
+            Requirement(),
+            Converter("conv", lambda x:x, False),
+            [Verifier("gt", lambda x: x > 0, True), Verifier("lt", lambda x: x < 10, True)],
+        )
 
-def test_create_converter_partial():
-    c = converter(partial(int, base=2))
-    assert c.name == "int"
-    assert c.kwargs == {"base": 2}
-    assert c.convert("100")[0] == 4
+    def test_verify(self):
+        v = self._validator()
+        r, f, b = v.validate([1, 2, 3])
+        assert r == [1, 2, 3]
+        assert f is None
+        assert not b
 
-def test_create_verifier_func():
-    def f(v):
-        return v <= 1
-    v = verifier(f)
-    assert not v.is_iter
-    assert v.name == "f"
-    assert v.verify(1) is None
-    assert v.verify(2) is not None
+    def test_fail_gt(self):
+        v = self._validator()
+        r, f, b = v.validate([1, -1, 3])
+        assert r is None
+        assert f[1].name == "gt"
+        assert b
 
-def test_create_verifier_tuple():
-    def f(v):
-        return v <= 1
-    v = verifier(("v", f))
-    assert not v.is_iter
-    assert v.name == "v"
-    assert v.verify(1) is None
-    assert v.verify(2) is not None
+    def test_fail_lt(self):
+        v = self._validator()
+        r, f, b = v.validate([1, 10, 3])
+        assert r is None
+        assert f[1].name == "lt"
+        assert b
 
-def test_create_verifier_iter():
-    def f(v):
-        return v <= 1
-    v = verifier([("v", f)])
-    assert v.is_iter
-    assert v.name == "v"
-    assert v.verify([-1, 0, 1]) is None
-    assert v.verify([0, 1, 2]) is not None
+    def test_fail_gt_unjointed(self):
+        v = self._validator()
+        cxt = IterativeContext()
+        cxt.joint_failure = False
+        r, f, b = v.validate([1, -1, 3], cxt)
+        assert r == [1, None, 3]
+        assert f[1].name == "gt"
+        assert not b
 
-def test_create_verifier_partial():
-    def f(v, th):
-        return v < th
-    v = verifier(partial(f, th=3))
-    assert v.name == "f"
-    assert v.kwargs == {"th": 3}
-    assert v.verify(2) is None
-    assert v.verify(3).kwargs == {"th": 3}
+    def test_fail_lt_unjointed(self):
+        v = self._validator()
+        cxt = IterativeContext()
+        cxt.joint_failure = False
+        r, f, b = v.validate([1, 10, 3], cxt)
+        assert r == [1, None, 3]
+        assert f[1].name == "lt"
+        assert not b
