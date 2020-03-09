@@ -23,7 +23,7 @@ $ pip install dhampyr
 The module `dhampyr.validator` exports a function `v` which creates a `Validator`. This function is designed to be used in annotation context of a class attribute.
 
 ```
-from dhampyr.validator import *
+from dhampyr import *
 
 class C:
     a: v(int, lambda x: x < 5, lambda x: x > 2) = 0
@@ -89,7 +89,7 @@ d = r.or_else(handle_error)
 
 ### Requiring constraint
 
-`+` operator lets a `Validator` requires an input value and fails if it does not exist. The error caused by this constraint is represented with `MissingFailure` whose name is `missing`.
+`+` operator lets a `Validator` require an input value and fail if the value is missing, `None` or considered to be *empty*. The error caused by this constraint is represented with `MissingFailure` whose name is `missing`.
 
 ```
 class C:

@@ -14,6 +14,9 @@ class ValidationFailure(Exception):
         self._args = args or []
         self._kwargs = kwargs or {}
 
+    def __iter__(self):
+        yield ValidationPath([]), self
+
     @property
     def name(self):
         return self._name
@@ -33,6 +36,11 @@ class ValidationFailure(Exception):
     @classmethod
     def abort(cls, *args, **kwargs):
         raise PartialFailure(partial(cls, *args, **kwargs))
+
+
+class MalformedFailure(ValidationFailure):
+    def __init__(self):
+        super().__init__("malformed", "Input of the validation suite is not like dictinoary.")
 
 
 class ValidationPath:
@@ -144,7 +152,13 @@ class CompositeValidationFailure(ValidationFailure):
         return len(self.failures)
 
     def __getitem__(self, key):
-        return self.failures[key]
+        if isinstance(key, str):
+            f = self.failures
+            for p in ValidationPath.of(key):
+                f = f[p]
+            return f
+        else:
+            return self.failures[key]
 
     def __contains__(self, key):
         return key in self.failures

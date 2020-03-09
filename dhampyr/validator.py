@@ -4,7 +4,7 @@ from functools import reduce, partial
 from .requirement import Requirement, RequirementPolicy, MissingFailure
 from .config import default_config
 
-from .failures import ValidationFailure, CompositeValidationFailure
+from .failures import ValidationFailure, MalformedFailure, CompositeValidationFailure
 from .converter import Converter, ConversionFailure
 from .verifier import Verifier, VerificationFailure
 from .context import ValidationContext
@@ -28,6 +28,7 @@ __all__ = [
     "converter",
     "verifier",
     "ValidationFailure",
+    "MalformedFailure",
     "CompositeValidationFailure",
     "Converter",
     "ConversionFailure",

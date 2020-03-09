@@ -6,7 +6,7 @@ from .converter import Converter
 from .verifier import Verifier
 from .config import default_config
 from .converter import ValidationContext
-from .failures import ValidationFailure, CompositeValidationFailure
+from .failures import ValidationFailure, MalformedFailure, CompositeValidationFailure
 from .requirement import Requirement, VALUE_MISSING
 
 try:
@@ -50,10 +50,20 @@ def validate_dict(cls, values, context=None, *args, **kwargs):
     Each `Validator` converts and verifies a value obtained from `values` with the key and, if valid, assigns the converted value to craated instance of `cls` as an attribute.
     In case the validation fails, declared value of the attribute is assigned instead.
 
+    `values` must be a dictionary-like object whose type fulfills following conditions.
+
+    - It is `werkzeug.datastructures.MultiDict`.
+    - or
+        - it is neither `list` nor `str`
+        - and it declares `__contains__`, `__getitem__`, `__iter__` correctly.
+
+    Giving `values` which is not dictionary-like causes `MalformedFailure` as a result.
+    Additionary, all keys iterated by `__iter__` must be safely available for the argument of `__getitem__`, otherwise runtime exception will occur.
+
     Parameters
     ----------
     cls: type
-        Type of instance to create.
+        Type of the instance to create.
     values: dict
         Dictionay-like object.
     context: ValidationContext
@@ -81,6 +91,11 @@ def validate_dict(cls, values, context=None, *args, **kwargs):
     >>> (x.a, x.b, x.c, x.d)
     (1, 1, 2, 3)
     """
+    context = context or ValidationContext()
+
+    if not _like_dictionary(values):
+        return ValidationResult(None, MalformedFailure(), context)
+
     instance = cls(*args, *kwargs)
 
     def get(d, k, as_list):
@@ -89,7 +104,6 @@ def validate_dict(cls, values, context=None, *args, **kwargs):
         else:
             return d[k]
 
-    context = context or ValidationContext()
     failures = CompositeValidationFailure()
 
     validators = parse_validators(cls)
@@ -110,11 +124,20 @@ def validate_dict(cls, values, context=None, *args, **kwargs):
             setattr(instance, k, getattr(cls, k))
 
     # TODO: items() of MultiDict returns only first element associated with each key respectively.
-    for k, v in values.items():
+    for k in values:
         if k not in validators:
-            context.remainders[k] = v
+            context.remainders[k] = values[k]
 
     return ValidationResult(instance, failures, context)
+
+
+def _like_dictionary(values):
+    return is_multidict(values) or (
+        hasattr(values, '__contains__') \
+            and hasattr(values, '__getitem__') \
+            and hasattr(values, '__iter__') \
+            and not isinstance(values, (list, str))
+    )
 
 
 def _unpack_partial(p, args, kwargs):

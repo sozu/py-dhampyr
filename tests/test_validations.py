@@ -18,6 +18,14 @@ class TestParse:
         assert set(vs.keys()) == {"v3", "v4", "v5"}
 
 
+class TestMalformed:
+    def test_malformed(self):
+        class C:
+            v1: v(int)
+        r = validate_dict(C, [])
+        assert [(str(p), f.name) for p, f in r.failures] == [("", "malformed")]
+
+
 class E(Enum):
     E1 = auto()
     E2 = auto()
