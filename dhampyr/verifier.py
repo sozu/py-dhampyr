@@ -42,7 +42,9 @@ class Verifier:
         """
         def ver(v, i=None):
             try:
-                c = context if i is None else context[i] if context else None
+                c = context
+                if c and i is not None:
+                    c = c[i]
                 r = contextual_invoke(self.func, v, c)
                 return None if r else VerificationFailure(f"Verification by {self.name} failed.", self)
             except PartialFailure as e:

@@ -70,8 +70,8 @@ class TestIterativeVerify:
 
     def test_context(self):
         def fail(v, cxt:ValidationContext):
-            raise ValidationFailure(name="context")
+            raise ValidationFailure(name=str(cxt.path))
         v = Verifier("test", fail, True)
-        f = v.verify([3, 2, 1])
+        f = v.verify([3, 2, 1], ValidationContext())
         assert len(f) == 3
-        assert [f[i].name for i in range(3)] == ["context", "context", "context"]
+        assert [f[i].name for i in range(3)] == ["[0]", "[1]", "[2]"]

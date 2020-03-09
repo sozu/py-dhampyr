@@ -2,6 +2,7 @@ from enum import Enum
 from collections import OrderedDict
 from functools import reduce, partial
 from .requirement import Requirement, RequirementPolicy, MissingFailure
+from .config import default_config
 
 from .failures import ValidationFailure, CompositeValidationFailure
 from .converter import Converter, ConversionFailure
@@ -84,15 +85,22 @@ class Validator:
 
     Validation is classified into 3 phases each of which corresponds to an attribute of `Validator` object.
     """
-    def __init__(self, requirement, converter, verifiers):
-        self.requirement = requirement
+    def __init__(self, converter, verifiers, config=None):
+        self.config = config or default_config()
+        self.requirement = Requirement(
+            missing=RequirementPolicy.SKIP,
+            null=RequirementPolicy.SKIP if self.config.inquires_null else RequirementPolicy.CONTINUE,
+            empty=RequirementPolicy.SKIP if self.config.inquires_empty else RequirementPolicy.CONTINUE,
+        )
         self.converter = converter
         self.verifiers = verifiers
 
     def __pos__(self):
         self.requirement.missing = RequirementPolicy.FAIL
-        self.requirement.null = RequirementPolicy.FAIL
-        self.requirement.empty = RequirementPolicy.FAIL
+        if self.config.inquires_null:
+            self.requirement.null = RequirementPolicy.FAIL
+        if self.config.inquires_empty:
+            self.requirement.empty = RequirementPolicy.FAIL
         return self
 
     def __and__(self, null_empty):
@@ -164,7 +172,10 @@ class Validator:
         val, failure = self.converter.convert(value, context)
 
         if failure:
-            return None if joint_failure else val, failure, joint_failure
+            if not joint_failure and self.converter.is_iter:
+                return val, failure, False
+            else:
+                return None, failure, True
 
         for verifier in self.verifiers:
             f = verifier.verify(val, context)

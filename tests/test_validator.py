@@ -3,20 +3,34 @@ from enum import Enum, auto
 from functools import partial
 from dhampyr.failures import ValidationFailure, CompositeValidationFailure
 from dhampyr.requirement import Requirement, RequirementPolicy, VALUE_MISSING, MissingFailure, NullFailure, EmptyFailure
-from dhampyr.context import ValidationContext, IterativeContext
+from dhampyr.config import ValidationConfiguration
+from dhampyr.context import ValidationContext
 from dhampyr.converter import Converter, ConversionFailure
 from dhampyr.verifier import Verifier, VerificationFailure
 from dhampyr.validator import Validator
 
 
+class TestPositive:
+    def test_ignore_null(self):
+        config = ValidationConfiguration()
+        config.inquires_null = False
+        v = +Validator(Converter("conv", lambda x:x, False), [], config)
+        assert v.requirement.missing == RequirementPolicy.FAIL
+        assert v.requirement.null == RequirementPolicy.CONTINUE
+        assert v.requirement.empty == RequirementPolicy.FAIL
+
+    def test_ignore_empty(self):
+        config = ValidationConfiguration()
+        config.inquires_empty = False
+        v = +Validator(Converter("conv", lambda x:x, False), [], config)
+        assert v.requirement.missing == RequirementPolicy.FAIL
+        assert v.requirement.null == RequirementPolicy.FAIL
+        assert v.requirement.empty == RequirementPolicy.CONTINUE
+
+
 class TestRequirement:
     def _validator(self):
         return Validator(
-            Requirement(
-                missing=RequirementPolicy.SKIP,
-                null=RequirementPolicy.SKIP,
-                empty=RequirementPolicy.SKIP,
-            ),
             Converter("conv", lambda x:x, False),
             [],
         )
@@ -88,7 +102,6 @@ class TestRequirement:
 class TestConvert:
     def _validator(self):
         return Validator(
-            Requirement(),
             Converter("conv", int, False),
             [],
         )
@@ -111,7 +124,6 @@ class TestConvert:
 class TestIterativeConvert:
     def _validator(self):
         return Validator(
-            Requirement(),
             Converter("conv", int, True),
             [],
         )
@@ -132,7 +144,7 @@ class TestIterativeConvert:
 
     def test_fail_unjointed(self):
         v = self._validator()
-        cxt = IterativeContext()
+        cxt = ValidationContext()
         cxt.joint_failure = False
         r, f, b = v.validate(["1", "a", "3"], cxt)
         assert r == [1, None, 3]
@@ -143,7 +155,6 @@ class TestIterativeConvert:
 class TestVerify:
     def _validator(self):
         return Validator(
-            Requirement(),
             Converter("conv", lambda x:x, False),
             [Verifier("gt", lambda x: x > 0, False), Verifier("lt", lambda x: x < 10, False)],
         )
@@ -173,7 +184,6 @@ class TestVerify:
 class TestIterativeVerify:
     def _validator(self):
         return Validator(
-            Requirement(),
             Converter("conv", lambda x:x, False),
             [Verifier("gt", lambda x: x > 0, True), Verifier("lt", lambda x: x < 10, True)],
         )
@@ -201,7 +211,7 @@ class TestIterativeVerify:
 
     def test_fail_gt_unjointed(self):
         v = self._validator()
-        cxt = IterativeContext()
+        cxt = ValidationContext()
         cxt.joint_failure = False
         r, f, b = v.validate([1, -1, 3], cxt)
         assert r == [1, None, 3]
@@ -210,7 +220,7 @@ class TestIterativeVerify:
 
     def test_fail_lt_unjointed(self):
         v = self._validator()
-        cxt = IterativeContext()
+        cxt = ValidationContext()
         cxt.joint_failure = False
         r, f, b = v.validate([1, 10, 3], cxt)
         assert r == [1, None, 3]

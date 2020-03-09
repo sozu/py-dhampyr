@@ -2,28 +2,48 @@ from collections import OrderedDict
 from .failures import CompositeValidationFailure, ValidationPath
 
 
+class ContextAttributes:
+    def __init__(self, parent):
+        self._parent = parent
+        self._attributes = {}
+
+    def __getattr__(self, key):
+        if key in self._attributes:
+            return self._attributes[key]
+        elif self._parent:
+            return self._parent.__getattr__(key)
+        else:
+            raise AttributeError(f"This context has no attribute '{key}'.")
+
+
 class ValidationContext:
     """
     Represents execution context for a validation suite.
 
     Contexts are generated for each validating value respectively and they are managed under root context in tree structure.
 
-    TODO Enable assigning arbitrary values as an attribute to use runtime values in validation suite.
-
     Attributes
     ----------
     remainders: {str: object}
         Dictionary holding values which was not validated.
     """
-    def __init__(self, path=None):
+    def __init__(self, path=None, joint_failure=None, parent=None):
         self._contexts = {}
-        self._remainders = {}
+        self.remainders = {}
         self.path = path or ValidationPath([])
-        self.joint_failure = True
+        self.joint_failure = joint_failure if joint_failure is not None else  parent.joint_failure if parent else True
+        self._attributes = ContextAttributes(parent._attributes if parent else None)
 
-    @property
-    def remainders(self):
-        return self._remainders
+    def __contains__(self, key):
+        return key in self._contexts
+
+    def put(self, **attributes):
+        for k, v in attributes.items():
+            self._attributes._attributes[k] = v
+        return self
+
+    def __getattr__(self, key):
+        return getattr(self._attributes, key)
 
     def __getitem__(self, key):
         """
@@ -31,57 +51,19 @@ class ValidationContext:
 
         Parameters
         ----------
-        key: str
-            Key of a child context.
+        key: str | int
+            Key or index of a child context.
 
         Returns
         -------
         ValidationContext
-            Child context if exists, otherwise `KeyError` is raised.
+            Child context. If context does not exist on the key yet, new context is created and returned.
         """
-        return self._contexts[key]
-
-    def descend(self, key, is_iter):
-        """
-        Add a child context by its key if it does not exist.
-
-        Parameters
-        ----------
-        key: str | [str]
-            Key of a child context.
-        is_iter: bool
-            `True` if the child is iterative, otherwise `False`.
-
-        Returns
-        -------
-        ValidationContext
-            Added or found child context.
-        """
-        if is_iter:
-            return self._contexts.setdefault(key, IterativeContext(self.path + key))
-        else:
-            return self._contexts.setdefault(key, ValidationContext(self.path + key))
-
-
-class IterativeContext(ValidationContext):
-    def __init__(self):
-        super().__init__()
-        self._item_contexts = []
-
-    @property
-    def remainders(self):
-        return [c.remainders for c in self._item_contexts]
-
-    def __getitem__(self, key):
-        if isinstance(key, int):
-            return self._item_contexts[key]
-        else:
-            return [c[key] for c in self._item_contexts]
-
-    def append(self):
-        c = ValidationContext(self.path + len(self._item_contexts))
-        self._item_contexts.append(c)
-        return c
+        return self._contexts.setdefault(key, ValidationContext(
+            self.path + key,
+            joint_failure=self.joint_failure,
+            parent=self,
+        ))
 
 
 def contextual_invoke(f, v, context):

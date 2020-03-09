@@ -1,6 +1,6 @@
 import  pytest
 from dhampyr.failures import ValidationFailure, CompositeValidationFailure
-from dhampyr.context import ValidationContext, IterativeContext
+from dhampyr.context import ValidationContext
 from dhampyr.converter import Converter, ConversionFailure
 
 
@@ -41,9 +41,12 @@ class TestConvert:
 
     def test_context(self):
         def fail(v, cxt:ValidationContext):
-            raise ValidationFailure(name="context")
+            raise ValidationFailure(name=cxt.name)
         c = Converter("test", fail, False)
-        v, f = c.convert("1")
+        cxt = ValidationContext().put(
+            name = "context",
+        )
+        v, f = c.convert("1", cxt)
         assert v is None
         assert f.name == "context"
 
@@ -64,7 +67,7 @@ class TestIterativeConvert:
 
     def test_exception_unjointed(self):
         c = Converter("test", int, True)
-        cxt = IterativeContext()
+        cxt = ValidationContext()
         cxt.joint_failure = False
         v, f = c.convert(["1", "a", "3"], cxt)
         assert v == [1, None, 3]
@@ -73,8 +76,8 @@ class TestIterativeConvert:
 
     def test_context(self):
         def fail(v, cxt:ValidationContext):
-            raise ValidationFailure(name="context")
+            raise ValidationFailure(name=str(cxt.path))
         c = Converter("test", fail, True)
-        v, f = c.convert(["1", "2", "3"])
+        v, f = c.convert(["1", "2", "3"], ValidationContext())
         assert v is None
-        assert [f[i].name for i in range(3)] == ["context", "context", "context"]
+        assert [f[i].name for i in range(3)] == ["[0]", "[1]", "[2]"]

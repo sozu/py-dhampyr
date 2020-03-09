@@ -43,9 +43,11 @@ class Converter:
         ValidationFailure
             A failure in conversion or `None` when it succeeded.
         """
-        def conv(v, iterated=False):
+        def conv(v, i=None):
             try:
-                c = context if not iterated else context.append() if context else None
+                c = context
+                if c and i is not None:
+                    c = c[i]
                 return contextual_invoke(self.func, v, c), None
             except PartialFailure as e:
                 return None, e.create(converter=self)
@@ -55,7 +57,7 @@ class Converter:
                 return None, ConversionFailure(str(e), self)
 
         if self.is_iter:
-            results = [conv(v, True) for v in value]
+            results = [conv(v, i) for i, v in enumerate(value)]
             failures = [(i, f) for i, (v, f) in enumerate(results) if f is not None]
             if len(failures) == 0:
                 return [v for v,f in results], None

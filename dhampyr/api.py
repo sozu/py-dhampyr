@@ -4,6 +4,7 @@ from typing import get_type_hints
 from .validator import Validator, ValidationResult
 from .converter import Converter
 from .verifier import Verifier
+from .config import default_config
 from .converter import ValidationContext
 from .failures import ValidationFailure, CompositeValidationFailure
 from .requirement import Requirement, VALUE_MISSING
@@ -31,9 +32,14 @@ def v(conv, *vers):
     Validator
         Created `Validator`.
     """
+    config = default_config()
     c = converter(conv)
     vs = list(map(verifier, vers))
-    return Validator(Requirement(), c, vs)
+    return Validator(c, vs)
+
+
+def parse_validators(cls):
+    return {k:v for k, v in cls.__annotations__.items() if isinstance(v, Validator)}
 
 
 def validate_dict(cls, values, context=None, *args, **kwargs):
@@ -86,10 +92,10 @@ def validate_dict(cls, values, context=None, *args, **kwargs):
     context = context or ValidationContext()
     failures = CompositeValidationFailure()
 
-    targets = {k: v for k, v in cls.__annotations__.items() if isinstance(v, Validator)}
+    validators = parse_validators(cls)
 
-    for k, v in targets.items():
-        cxt = context.descend(k, v.accept_list)
+    for k, v in validators.items():
+        cxt = context[k]
 
         val = get(values, k, v.accept_list) if k in values else VALUE_MISSING
 
@@ -97,7 +103,7 @@ def validate_dict(cls, values, context=None, *args, **kwargs):
 
         if validated:
             setattr(instance, k, validated)
-        elif f:
+        if f:
             failures.add(k, f)
 
         if use_alt and hasattr(cls, k):
@@ -105,7 +111,7 @@ def validate_dict(cls, values, context=None, *args, **kwargs):
 
     # TODO: items() of MultiDict returns only first element associated with each key respectively.
     for k, v in values.items():
-        if k not in targets:
+        if k not in validators:
             context.remainders[k] = v
 
     return ValidationResult(instance, failures, context)
@@ -151,7 +157,6 @@ def converter(func):
             t = next(iter(f))
             def g(v, cxt: ValidationContext):
                 r = validate_dict(t, v, cxt)
-                cxt.remainders.update(r.context.remainders)
                 return r.or_else(throw)
             return Converter(name or t.__name__, g, it, t)
         elif isinstance(f, partial):

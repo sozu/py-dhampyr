@@ -1,200 +1,360 @@
 import pytest
-from dhampyr.validator import *
+from enum import Enum, auto
+from functools import partial as p
+from dhampyr.api import v, parse_validators, validate_dict
+from dhampyr.context import ValidationContext
 
-def test_create_validator_no_verifiers():
-    val = v(int)
-    assert val.requirement.missing == RequirementPolicy.SKIP
-    assert len(val.verifiers) == 0
-    assert val.validate("1")[0] == 1
-    assert isinstance(val.validate("a")[1], ConversionFailure)
 
-def test_create_validator_one_verifier():
-    val = v(int, lambda x: x <= 1)
-    assert val.requirement.missing == RequirementPolicy.SKIP
-    assert len(val.verifiers) == 1
-    assert val.validate("1")[0] == 1
-    assert isinstance(val.validate("2")[1], VerificationFailure)
+class TestParse:
+    class Requirement:
+        v1 = None
+        v2: int
+        v3: v(int)
+        v4: +v(int)
+        v5: v(int) & None | ... = 5
 
-def test_create_validator_multi_verifiers():
-    v1, v2 = lambda x: x >= 0, lambda x: x <= 1
-    val = v(int, v1, v2)
-    assert val.requirement.missing == RequirementPolicy.SKIP
-    assert len(val.verifiers) == 2
-    assert val.validate("1")[0] == 1
-    assert val.validate("2")[1].verifier is val.verifiers[1]
+    def test_parse(self):
+        vs = parse_validators(TestParse.Requirement)
+        assert set(vs.keys()) == {"v3", "v4", "v5"}
 
-def test_create_validator_requires():
-    val = +v(int)
-    assert val.requirement.missing == RequirementPolicy.FAIL
 
-class V:
-    a1: +v(int) = None
-    a2: v(int) = None
-    a3: v(int, lambda x: x == 3) = None
-    a4: v(int, lambda x: x > 3, lambda x: x < 5) = None
+class E(Enum):
+    E1 = auto()
+    E2 = auto()
+    E3 = auto()
+    E4 = auto()
+    E5 = auto()
 
-def test_validate_dict():
-    r = validate_dict(V, dict(a1="1", a2="2", a3="3", a4="4"))
-    assert len(r.failures) == 0
-    d = r.get()
-    assert d.a1 == 1
-    assert d.a2 == 2
-    assert d.a3 == 3
-    assert d.a4 == 4
 
-def test_validate_dict_allow_missing():
-    r = validate_dict(V, dict(a1="1", a3="3", a4="4"))
-    assert len(r.failures) == 0
-    d = r.get()
-    assert d.a1 == 1
-    assert d.a2 is None
-    assert d.a3 == 3
-    assert d.a4 == 4
+def gt0(v):
+    return v > 0
 
-def test_validate_dict_fail_missing():
-    r = validate_dict(V, dict(a2="2", a3="3", a4="4"))
-    assert len(r.failures) == 1
-    assert isinstance(r.failures["a1"], MissingFailure)
+def lt(v):
+    return v < 101
 
-def test_validate_dict_fail_convert():
-    r = validate_dict(V, dict(a1="1", a2="a", a3="3", a4="b"))
-    assert len(r.failures) == 2
-    assert isinstance(r.failures["a2"], ConversionFailure)
-    assert isinstance(r.failures["a4"], ConversionFailure)
+def gt(v, th):
+    return v > th
 
-def test_validate_dict_fail_verify():
-    r = validate_dict(V, dict(a1="1", a2="2", a3="2", a4="5"))
-    assert len(r.failures) == 2
-    assert isinstance(r.failures["a3"], VerificationFailure)
-    assert isinstance(r.failures["a4"], VerificationFailure)
+class V1:
+    # don't fail
+    v1: v(str) = "v1"
+    # required
+    v2: +v(str) = "v2"
+    # converter
+    v3: v(int) = 3
+    # converter without default
+    v4: v(int)
+    # named converter
+    v5: v(("c5", int)) = 5
+    # Enum
+    v6: v(E) = E.E2
+    # converter with partial
+    v7: v(p(int, base=2)) = 7
+    # verifier
+    v8: v(int, gt0) = 8
+    # verifier without default
+    v9: v(int, gt0)
+    # multiple verifiers
+    v10: v(int, gt0, lt) = 10
+    # named verifier
+    v11: v(int, ("v13", gt0)) = 11
+    # verifier with partial
+    v12: v(int, p(gt, th=0)) = 12
 
-class U:
-    u1: +v(int)
-    u2: v(int)
 
-def test_undef_prop_mising():
-    r = validate_dict(U, dict())
-    assert len(r.failures) == 1
-    assert isinstance(r.failures["u1"], MissingFailure)
-    assert not hasattr(r, "u1")
-    assert not hasattr(r, "u2")
+class TestFlat:
+    def test_empty(self):
+        r = validate_dict(V1, dict())
+        assert [str(p) for p, f in r.failures] == ["v2"]
+        assert r.get().v1 == "v1"
+        assert r.get().v3 == 3
+        assert not hasattr(r.get(), "v4")
+        assert r.get().v5 == 5
+        assert r.get().v6 == E.E2
+        assert r.get().v7 == 7
+        assert r.get().v8 == 8
+        assert not hasattr(r.get(), "v9")
+        assert r.get().v10 == 10
+        assert r.get().v11 == 11
+        assert r.get().v12 == 12
 
-class W:
-    b1: +v([int]) = None
-    b2: +v([int], ("v21", lambda x: len(x) > 2), ("v22", lambda x: len(x) < 4)) = None
-    b3: +v([int], [("v31", lambda x: x >= 0)], [("v32", lambda x: x <= 1)]) = None
-    b4: +v([int], ("v41", lambda x: len(x) == 3), [("v42", lambda x: x > 0 and x < 4)]) = None
+    def test_success(self):
+        r = validate_dict(V1, dict(
+            v1 = "s1",
+            v2 = "s2",
+            v3 = "30",
+            v4 = "40",
+            v5 = "50",
+            v6 = "E1",
+            v7 = "1000110",
+            v8 = "80",
+            v9 = "90",
+            v10 = "100",
+            v11 = "110",
+            v12 = "120",
+        ))
+        assert not r.failures
+        assert r.get().v1 == "s1"
+        assert r.get().v2 == "s2"
+        assert r.get().v3 == 30
+        assert r.get().v4 == 40
+        assert r.get().v5 == 50
+        assert r.get().v6 == E.E1
+        assert r.get().v7 == 70
+        assert r.get().v8 == 80
+        assert r.get().v9 == 90
+        assert r.get().v10 == 100
+        assert r.get().v11 == 110
+        assert r.get().v12 == 120
 
-def test_validate_dict_iter():
-    r = validate_dict(W, dict(b1=["1", "2"], b2=["0", "1", "2"], b3=["0", "1"], b4=["1", "2", "3"]))
-    assert len(r.failures) == 0
-    d = r.get()
-    assert d.b1 == [1, 2]
-    assert d.b2 == [0, 1, 2]
-    assert d.b3 == [0, 1]
-    assert d.b4 == [1, 2, 3]
+    def test_fail(self):
+        r = validate_dict(V1, dict(
+            v1 = "",
+            v2 = None,
+            v3 = "f3",
+            v4 = "f4",
+            v5 = "f5",
+            v6 = "E10",
+            v7 = "70",
+            v8 = "-8",
+            v9 = "-9",
+            v10 = "1000",
+            v11 = "-11",
+            v12 = "-12",
+        ))
+        assert [str(p) for p, f in r.failures] == [f"v{i}" for i in range(2, 13)]
+        assert r.get().v1 == "v1"
+        assert r.get().v2 == "v2"
+        assert r.get().v3 == 3
+        assert not hasattr(r.get(), "v4")
+        assert r.get().v5 == 5
+        assert r.get().v6 == E.E2
+        assert r.get().v7 == 7
+        assert r.get().v8 == 8
+        assert not hasattr(r.get(), "v9")
+        assert r.get().v10 == 10
+        assert r.get().v11 == 11
+        assert r.get().v12 == 12
 
-def test_validate_fail_iter():
-    r = validate_dict(W, dict(b1=["a", "2"], b2=["0", "1"], b3=["1", "2"], b4=["2", "3", "4"]))
-    assert len(r.failures) == 4
-    assert isinstance(r.failures["b1"][0], ConversionFailure)
-    assert isinstance(r.failures["b2"], VerificationFailure)
-    assert r.failures["b2"].verifier.name == "v21"
-    assert isinstance(r.failures["b3"][1], VerificationFailure)
-    assert r.failures["b3"][1].verifier.name == "v32"
-    assert isinstance(r.failures["b4"][2], VerificationFailure)
-    assert r.failures["b4"][2].verifier.name == "v42"
+
+def longer(vs):
+    return len(vs) > 3
+
+
+class V2:
+    v1: v([int]) = [1]
+    v2: +v([int]) = [2]
+    v3: v([("c2", int)]) = [3]
+    v4: v([E]) = [E.E5]
+    v5: v([p(int, base=2)]) = [5]
+    v6: v([int], [gt0]) = [6]
+    v7: v([int], [gt0], [lt]) = [7]
+    v8: v([int], [gt0], longer) = [8]
+
+
+class TestList:
+    def test_empty(self):
+        r = validate_dict(V2, dict())
+        assert [str(p) for p, f in r.failures] == ["v2"]
+        assert r.get().v1 == [1]
+        assert r.get().v2 == [2]
+        assert r.get().v3 == [3]
+        assert r.get().v4 == [E.E5]
+        assert r.get().v5 == [5]
+        assert r.get().v6 == [6]
+        assert r.get().v7 == [7]
+        assert r.get().v8 == [8]
+
+    def test_success(self):
+        r = validate_dict(V2, dict(
+            v1 = "123",
+            v2 = "123",
+            v3 = "123",
+            v4 = ["E1", "E3", "E5"],
+            v5 = ["1011", "1100", "1001"],
+            v6 = ["1", "2", "3"],
+            v7 = ["1", "2", "3"],
+            v8 = "1234",
+        ))
+        assert not r.failures
+        assert r.get().v1 == [1, 2, 3]
+        assert r.get().v2 == [1, 2, 3]
+        assert r.get().v3 == [1, 2, 3]
+        assert r.get().v4 == [E.E1, E.E3, E.E5]
+        assert r.get().v5 == [11, 12, 9]
+        assert r.get().v6 == [1, 2, 3]
+        assert r.get().v7 == [1, 2, 3]
+        assert r.get().v8 == [1, 2, 3, 4]
+
+    def test_fail(self):
+        r = validate_dict(V2, dict(
+            v1 = "1ab",
+            v2 = "",
+            v3 = "1a3",
+            v4 = ["E1", "E10", "E11"],
+            v5 = ["1011", "2100", "1001"],
+            v6 = ["1", "-2", "3"],
+            v7 = ["1", "102", "3"],
+            v8 = "123",
+        ))
+        assert [str(p) for p, f in r.failures] == [
+            "v1[1]", "v1[2]",
+            "v2",
+            "v3[1]",
+            "v4[1]", "v4[2]",
+            "v5[1]",
+            "v6[1]",
+            "v7[1]",
+            "v8",
+        ]
+        assert r.failures["v1"][1].name == "int"
+        assert r.failures["v1"][2].name == "int"
+        assert r.failures["v2"].name == "empty"
+        assert r.failures["v3"][1].name == "c2"
+        assert r.failures["v8"].name == "longer"
+        assert r.get().v1 == [1]
+        assert r.get().v2 == [2]
+        assert r.get().v3 == [3]
+        assert r.get().v4 == [E.E5]
+        assert r.get().v5 == [5]
+        assert r.get().v6 == [6]
+        assert r.get().v7 == [7]
+        assert r.get().v8 == [8]
+
 
 class C:
-    c1: +v(int, ("c1", lambda x: x > 0)) = None
-    c2: +v([int], [("c2", lambda x: x > 0)]) = None
+    c1: +v([int], [gt0]) = [1]
+    c2: +v(int, gt0) = 2
+
 
 class P:
-    p1: +v({C}, ("p1", lambda x: x.c1 > 10)) = None
-    p2: +v([{C}], [("p2", lambda x: x.c1 > 10)]) = None
+    p1: +v({C}) = None
+    p2: +v([{C}]) = []
 
-def test_nested_dict():
-    r = validate_dict(P, dict(
-        p1 = dict(c1 = "11", c2 = ["1", "2", "3"]),
-        p2 = [
-            dict(c1 = "11", c2 = ["1", "2", "3"]),
-            dict(c1 = "12", c2 = ["4", "5", "6"]),
-        ],
-    ))
-    assert len(r.failures) == 0
-    d = r.get()
-    assert d.p1.c1 == 11
-    assert d.p1.c2 == [1, 2, 3]
-    assert d.p2[0].c1 == 11
-    assert d.p2[0].c2 == [1, 2, 3]
-    assert d.p2[1].c1 == 12
-    assert d.p2[1].c2 == [4, 5, 6]
 
-def test_fail_nested_dict_on_child():
-    r = validate_dict(P, dict(
-        p1 = dict(c1 = "0", c2 = ["1", "-2", "3"]),
-        p2 = [
-            dict(c1 = "11", c2 = ["1", "-2", "3"]),
-            dict(c1 = "0", c2 = ["4", "5", "6"]),
-        ],
-    ))
-    assert len(r.failures) == 2
-    assert len(r.failures["p1"]) == 2
-    assert len(r.failures["p2"]) == 2
-    assert len(r.failures["p2"][0]) == 1
-    assert len(r.failures["p2"][1]) == 1
-    assert r.failures["p1"]["c1"].name == "c1"
-    assert r.failures["p1"]["c2"][1].name == "c2"
-    assert r.failures["p2"][0]["c2"][1].name == "c2"
-    assert r.failures["p2"][1]["c1"].name == "c1"
-    keyset = set([str(k) for k, f in r.failures])
-    assert keyset == {"p1.c1", "p1.c2[1]", "p2[0].c2[1]", "p2[1].c1"}
+class V3:
+    v1: +v({P}) = None
+    v2: +v([{P}]) = []
 
-def test_fail_nested_dict_on_parent():
-    r = validate_dict(P, dict(
-        p1 = dict(c1 = "10", c2 = ["1", "2", "3"]),
-        p2 = [
-            # Verification of 'p2' iteself is not done because the first child fails.
-            # Therefore, the result does not contain the failure supposed to happen by `x.c1 > 10`.
-            dict(c1 = "10", c2 = ["1", "-2", "3"]),
-            dict(c1 = "10", c2 = ["4", "5", "6"]),
-        ],
-    ))
-    assert len(r.failures) == 2
-    assert isinstance(r.failures["p1"], VerificationFailure)
-    assert len(r.failures["p2"]) == 1
-    assert len(r.failures["p2"][0]) == 1
-    assert r.failures["p1"].name == "p1"
-    assert r.failures["p2"][0]["c2"][1].name == "c2"
-    keyset = set([str(k) for k, f in r.failures])
-    assert keyset == {"p1", "p2[0].c2[1]"}
 
-def test_context():
-    class C:
-        a: v(int) = 0
-    r = validate_dict(C, dict(a = "1", b = "a", c = dict(d="b")))
-    assert len(r.failures) == 0
-    assert r.get().a == 1
-    assert r.context.remainders == dict(b = "a", c = dict(d = "b"))
+class TestNest:
+    def test_empty(self):
+        r = validate_dict(V3, dict())
+        assert [str(p) for p, f in r.failures] \
+            == ["v1", "v2"]
+        assert r.get().v1 is None
+        assert r.get().v2 == []
 
-def test_context_nested():
-    class D:
-        b: v(int, lambda x: x < 2) = 0
-    class C:
-        a: v({D}) = None
-    r = validate_dict(C, dict(a = dict(b = "1", c = "c"), b = "b"))
-    assert len(r.failures) == 0
-    assert r.get().a.b == 1
-    assert r.context.remainders == dict(b = "b")
-    assert r.context["a"].remainders == dict(c = "c")
+    def test_empty_parent(self):
+        r = validate_dict(V3, dict(
+            v1 = dict(),
+            v2 = [dict()],
+        ))
+        assert [str(p) for p, f in r.failures] \
+            == ["v1.p1", "v1.p2", "v2[0].p1", "v2[0].p2"]
+        assert r.get().v1 is None
+        assert r.get().v2 == []
 
-def test_context_iter_nested():
-    class D:
-        b: v(int, lambda x: x < 3) = 0
-    class C:
-        a: v([{D}]) = []
-    r = validate_dict(C, dict(a = [dict(b = "1", c = "c"), dict(b = "2", d = "d")], b = "b"))
-    assert len(r.failures) == 0
-    assert r.get().a[0].b == 1
-    assert r.context.remainders == dict(b = "b")
-    assert r.context["a"].remainders == [dict(c = "c"), dict(d = "d")]
+    def test_empty_parent_unjointed(self):
+        r = validate_dict(V3, dict(
+            v1 = dict(),
+            v2 = [
+                dict(),
+                dict(
+                    p1=dict(c1="12", c2="4"),
+                    p2=[dict(c1="34", c2="5")],
+                ),
+            ],
+        ), ValidationContext(joint_failure=False))
+        assert [str(p) for p, f in r.failures] \
+            == ["v1.p1", "v1.p2", "v2[0].p1", "v2[0].p2"]
+        assert r.get().v1 is None
+        assert r.get().v2[0] is None
+        assert r.get().v2[1].p1.c1 == [1,2]
+        assert r.get().v2[1].p1.c2 == 4
+        assert r.get().v2[1].p2[0].c1 == [3,4]
+        assert r.get().v2[1].p2[0].c2 == 5
+
+    def test_success(self):
+        r = validate_dict(V3, dict(
+            v1 = dict(
+                p1 = dict(c1 = "12", c2 = "3"),
+                p2 = [
+                    dict(c1 = "34", c2 = "5"),
+                    dict(c1 = "56", c2 = "7"),
+                ]
+            ),
+            v2 = [
+                dict(
+                    p1 = dict(c1 = "123", c2 = "4"),
+                    p2 = [
+                        dict(c1 = "234", c2 = "5"),
+                        dict(c1 = "345", c2 = "6"),
+                    ],
+                ),
+                dict(
+                    p1 = dict(c1 = "456", c2 = "7"),
+                    p2 = [
+                        dict(c1 = "567", c2 = "8"),
+                        dict(c1 = "678", c2 = "9"),
+                    ],
+                ),
+            ],
+        ))
+        assert not r.failures
+        assert r.get().v1.p1.c1 == [1,2]
+        assert r.get().v1.p1.c2 == 3
+        assert r.get().v1.p2[0].c1 == [3,4]
+        assert r.get().v1.p2[0].c2 == 5
+        assert r.get().v1.p2[1].c1 == [5,6]
+        assert r.get().v1.p2[1].c2 == 7
+        assert r.get().v2[0].p1.c1 == [1,2,3]
+        assert r.get().v2[0].p1.c2 == 4
+        assert r.get().v2[0].p2[0].c1 == [2,3,4]
+        assert r.get().v2[0].p2[0].c2 == 5
+        assert r.get().v2[0].p2[1].c1 == [3,4,5]
+        assert r.get().v2[0].p2[1].c2 == 6
+        assert r.get().v2[1].p1.c1 == [4,5,6]
+        assert r.get().v2[1].p1.c2 == 7
+        assert r.get().v2[1].p2[0].c1 == [5,6,7]
+        assert r.get().v2[1].p2[0].c2 == 8
+        assert r.get().v2[1].p2[1].c1 == [6,7,8]
+        assert r.get().v2[1].p2[1].c2 == 9
+
+    def test_fail(self):
+        r = validate_dict(V3, dict(
+            v1 = dict(
+                p1 = dict(c1 = "12", c2 = "-3"),
+                p2 = [
+                    dict(c1 = "34", c2 = "5"),
+                    dict(c1 = ["-5", "6"], c2 = "7"),
+                ]
+            ),
+            v2 = [
+                dict(
+                    p1 = dict(c1 = ["1", "-2", "-3"], c2 = "4"),
+                    p2 = [
+                        dict(c1 = "234", c2 = "5"),
+                        dict(c1 = ["-3", "-4", "-5"], c2 = "-6"),
+                    ],
+                ),
+                dict(
+                    p1 = dict(c1 = "456", c2 = "7"),
+                    p2 = [
+                        dict(c1 = "567", c2 = "8"),
+                        dict(c1 = "678", c2 = "9"),
+                    ],
+                ),
+            ],
+        ))
+        assert [str(p) for p, f in r.failures] \
+            == [
+                "v1.p1.c2",
+                "v1.p2[1].c1[0]",
+                "v2[0].p1.c1[1]",
+                "v2[0].p1.c1[2]",
+                "v2[0].p2[1].c1[0]",
+                "v2[0].p2[1].c1[1]",
+                "v2[0].p2[1].c1[2]",
+                "v2[0].p2[1].c2",
+            ]
