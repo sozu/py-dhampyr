@@ -43,6 +43,18 @@ class Requirement:
         self.empty = empty
         self.predicates = predicates or []
 
+    @property
+    def requires(self):
+        """
+        Checks one of the policies is `FAIL`.
+
+        Returns
+        -------
+        bool
+            `True` when one of policies is `FAIL`.
+        """
+        return any(map(lambda r: r == RequirementPolicy.FAIL, (self.missing, self.null, self.empty)))
+
     def _check_empty(self, value):
         if isinstance(value, str) and value == "":
             return True

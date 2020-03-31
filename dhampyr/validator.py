@@ -54,6 +54,17 @@ class ValidationResult:
         self.failures = failures
         self.context = context
 
+    def __bool__(self):
+        """
+        Checks this result represents success.
+
+        Returns
+        -------
+        bool
+            `True` if the validation which generates this result has succeeded.
+        """
+        return len(self.failures) == 0
+
     def get(self):
         """
         Returns an instance created in `validate_dict`
@@ -130,6 +141,18 @@ class Validator:
         else:
             raise ValueError(f"Only None or Ellipsis(...) is available with bit-wise operation to Validator.")
         return self
+
+    @property
+    def requires(self):
+        """
+        Checks if this validator fails for the missing, null or empty input.
+
+        Returns
+        -------
+        bool
+            `True` when one of this validator's requirement policies is `FAIL`.
+        """
+        return self.requirement.requires
 
     @property
     def accept_list(self):

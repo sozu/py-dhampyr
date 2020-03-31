@@ -38,6 +38,7 @@ class TestRequirement:
     def test_missing_fail(self):
         v = +(self._validator())
         r, f, b = v.validate(VALUE_MISSING)
+        assert v.requires
         assert r is None
         assert isinstance(f, MissingFailure)
         assert b
@@ -45,6 +46,7 @@ class TestRequirement:
     def test_missing_skip(self):
         v = self._validator()
         r, f, b = v.validate(VALUE_MISSING)
+        assert not v.requires
         assert r is None
         assert f is None
         assert b
@@ -52,6 +54,7 @@ class TestRequirement:
     def test_null_fail(self):
         v = self._validator() & None
         r, f, b = v.validate(None)
+        assert v.requires
         assert r is None
         assert isinstance(f, NullFailure)
         assert b
@@ -59,6 +62,7 @@ class TestRequirement:
     def test_null_skip(self):
         v = self._validator() ^ None
         r, f, b = v.validate(None)
+        assert not v.requires
         assert r is None
         assert f is None
         assert b
@@ -66,6 +70,7 @@ class TestRequirement:
     def test_null_continue(self):
         v = self._validator() | None
         r, f, b = v.validate(None)
+        assert not v.requires
         assert r is None
         assert f is None
         assert not b
@@ -73,6 +78,7 @@ class TestRequirement:
     def test_empty_fail(self):
         v = self._validator() & ...
         r, f, b = v.validate("")
+        assert v.requires
         assert r is None
         assert isinstance(f, EmptyFailure)
         assert b
@@ -80,6 +86,7 @@ class TestRequirement:
     def test_empty_skip(self):
         v = self._validator() ^ ...
         r, f, b = v.validate("")
+        assert not v.requires
         assert r is None
         assert f is None
         assert b
@@ -87,6 +94,7 @@ class TestRequirement:
     def test_empty_continue(self):
         v = self._validator() | ...
         r, f, b = v.validate("")
+        assert not v.requires
         assert r == ""
         assert f is None
         assert not b
@@ -94,6 +102,7 @@ class TestRequirement:
     def test_exist(self):
         v = self._validator()
         r, f, b = v.validate("1")
+        assert not v.requires
         assert r == "1"
         assert f is None
         assert not b

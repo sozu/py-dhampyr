@@ -73,6 +73,7 @@ class V1:
 class TestFlat:
     def test_empty(self):
         r = validate_dict(V1, dict())
+        assert not r
         assert [str(p) for p, f in r.failures] == ["v2"]
         assert r.get().v1 == "v1"
         assert r.get().v3 == 3
@@ -101,6 +102,7 @@ class TestFlat:
             v11 = "110",
             v12 = "120",
         ))
+        assert r
         assert not r.failures
         assert r.get().v1 == "s1"
         assert r.get().v2 == "s2"
@@ -130,6 +132,7 @@ class TestFlat:
             v11 = "-11",
             v12 = "-12",
         ))
+        assert not r
         assert [str(p) for p, f in r.failures] == [f"v{i}" for i in range(2, 13)]
         assert r.get().v1 == "v1"
         assert r.get().v2 == "v2"
@@ -163,6 +166,7 @@ class V2:
 class TestList:
     def test_empty(self):
         r = validate_dict(V2, dict())
+        assert not r
         assert [str(p) for p, f in r.failures] == ["v2"]
         assert r.get().v1 == [1]
         assert r.get().v2 == [2]
@@ -184,6 +188,7 @@ class TestList:
             v7 = ["1", "2", "3"],
             v8 = "1234",
         ))
+        assert r
         assert not r.failures
         assert r.get().v1 == [1, 2, 3]
         assert r.get().v2 == [1, 2, 3]
@@ -205,6 +210,7 @@ class TestList:
             v7 = ["1", "102", "3"],
             v8 = "123",
         ))
+        assert not r
         assert [str(p) for p, f in r.failures] == [
             "v1[1]", "v1[2]",
             "v2",
@@ -248,6 +254,7 @@ class V3:
 class TestNest:
     def test_empty(self):
         r = validate_dict(V3, dict())
+        assert not r
         assert [str(p) for p, f in r.failures] \
             == ["v1", "v2"]
         assert r.get().v1 is None
@@ -258,6 +265,7 @@ class TestNest:
             v1 = dict(),
             v2 = [dict()],
         ))
+        assert not r
         assert [str(p) for p, f in r.failures] \
             == ["v1.p1", "v1.p2", "v2[0].p1", "v2[0].p2"]
         assert r.get().v1 is None
@@ -274,6 +282,7 @@ class TestNest:
                 ),
             ],
         ), ValidationContext(joint_failure=False))
+        assert not r
         assert [str(p) for p, f in r.failures] \
             == ["v1.p1", "v1.p2", "v2[0].p1", "v2[0].p2"]
         assert r.get().v1 is None
@@ -309,6 +318,7 @@ class TestNest:
                 ),
             ],
         ))
+        assert r
         assert not r.failures
         assert r.get().v1.p1.c1 == [1,2]
         assert r.get().v1.p1.c2 == 3
@@ -355,6 +365,7 @@ class TestNest:
                 ),
             ],
         ))
+        assert not r
         assert [str(p) for p, f in r.failures] \
             == [
                 "v1.p1.c2",

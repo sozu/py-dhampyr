@@ -14,6 +14,9 @@ class ValidationFailure(Exception):
         self._args = args or []
         self._kwargs = kwargs or {}
 
+    def __len__(self):
+        return 1
+
     def __iter__(self):
         yield ValidationPath([]), self
 
