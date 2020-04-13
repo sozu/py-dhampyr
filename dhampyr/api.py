@@ -115,7 +115,7 @@ def validate_dict(cls, values, context=None, *args, **kwargs):
 
         validated, f, use_alt = v.validate(val, cxt)
 
-        if validated:
+        if validated is not None:
             setattr(instance, k, validated)
         if f:
             failures.add(k, f)
