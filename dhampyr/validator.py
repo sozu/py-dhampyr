@@ -4,7 +4,7 @@ from functools import reduce, partial
 from .requirement import Requirement, RequirementPolicy, MissingFailure
 from .config import default_config
 
-from .failures import ValidationFailure, MalformedFailure, CompositeValidationFailure
+from .failures import ValidationPath, ValidationFailure, MalformedFailure, CompositeValidationFailure
 from .converter import Converter, ConversionFailure
 from .verifier import Verifier, VerificationFailure
 from .context import ValidationContext
@@ -67,7 +67,7 @@ class ValidationResult:
 
     def get(self):
         """
-        Returns an instance created in `validate_dict`
+        Returns an instance created by `validate_dict`.
 
         Returns
         -------
@@ -76,7 +76,7 @@ class ValidationResult:
         """
         return self.validated
 
-    def or_else(self, handler):
+    def or_else(self, handler, allows=[]):
         """
         Returns an instance created in `validate_dict` if the validation succeeded, otherwise executes `handler`.
 
@@ -84,8 +84,12 @@ class ValidationResult:
         ----------
         handler: CompositeValidationFailure -> any
             A function which takes validation failures.
+        allows: [str]
+            Paths. When all failures are located under them, `handler` is not invoked.
         """
         if len(self.failures.failures) == 0:
+            return self.validated
+        elif all([any([p.under(a) for a in map(ValidationPath.of, allows)]) for p, _ in self.failures]):
             return self.validated
         else:
             return handler(self.failures)
@@ -96,6 +100,16 @@ class Validator:
     Validator provides a functionality to apply validation rules to a value.
 
     Validation is classified into 3 phases each of which corresponds to an attribute of `Validator` object.
+
+    requirements phase
+        This phase checks whether the input object *exists* or not.
+        Validator object declared with prepending `+` operator fails when the input object does not exist.
+
+    conversion phase
+        This phase converts the input object into another object by a `Converter`.
+
+    verification phase
+        This phase verifies converted object by a sequence of `Verifier`s.
     """
     def __init__(self, converter, verifiers, config=None):
         self.config = config or default_config()

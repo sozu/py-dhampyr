@@ -28,3 +28,17 @@ class TestRepr:
     def test_repr(self):
         p = ValidationPath(["a", "b", 1, "c", 1, 2, 3, "d"])
         assert str(p) == "a.b[1].c[1][2][3].d"
+
+
+class TestUnder:
+    def test_under(self):
+        p1 = ValidationPath.of("a[0].b.c[1]")
+
+        assert p1.under(ValidationPath.of("a"))
+        assert p1.under(ValidationPath.of("a[0]"))
+        assert p1.under(ValidationPath.of("a[0].b"))
+        assert p1.under(ValidationPath.of("a[0].b.c"))
+        assert p1.under(ValidationPath.of("a[0].b.c[1]"))
+        assert not p1.under(ValidationPath.of("a[0].b.c[2]"))
+        assert not p1.under(ValidationPath.of("a[0].c"))
+        assert not p1.under(ValidationPath.of("a[1]"))

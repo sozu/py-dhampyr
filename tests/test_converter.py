@@ -1,4 +1,4 @@
-import  pytest
+import pytest
 from dhampyr.failures import ValidationFailure, CompositeValidationFailure
 from dhampyr.context import ValidationContext
 from dhampyr.converter import Converter, ConversionFailure
@@ -50,6 +50,17 @@ class TestConvert:
         assert v is None
         assert f.name == "context"
 
+    def test_strict(self):
+        c = Converter("test", int, False, strict=True)
+        v, f = c.convert("1")
+        assert v is None
+        assert isinstance(f, ConversionFailure)
+        assert f.converter is c
+        assert f.name == "test"
+        v, f = c.convert(1)
+        assert v == 1
+        assert f is None
+
 
 class TestIterativeConvert:
     def test_convert(self):
@@ -81,3 +92,14 @@ class TestIterativeConvert:
         v, f = c.convert(["1", "2", "3"], ValidationContext())
         assert v is None
         assert [f[i].name for i in range(3)] == ["[0]", "[1]", "[2]"]
+
+    def test_strict(self):
+        c = Converter("test", int, True, strict=True)
+        cxt = ValidationContext()
+        cxt.joint_failure = False
+        v, f = c.convert(["1", 2, "3"], cxt)
+        assert v  == [None, 2, None]
+        assert isinstance(f, CompositeValidationFailure)
+        assert isinstance(f[0], ConversionFailure)
+        assert f[1] is None
+        assert isinstance(f[2], ConversionFailure)

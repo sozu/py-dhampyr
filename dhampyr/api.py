@@ -42,6 +42,10 @@ def parse_validators(cls):
     return {k:v for k, v in cls.__annotations__.items() if isinstance(v, Validator)}
 
 
+def fetch_verifier_methods(cls):
+    return [getattr(cls, k) for k in dir(cls) if not k.startswith("__") and isinstance(getattr(cls, k), Verifier)]
+
+
 def validate_dict(cls, values, context=None, *args, **kwargs):
     """
     Creates an instance of `cls` from dictionary-like object.
@@ -127,6 +131,12 @@ def validate_dict(cls, values, context=None, *args, **kwargs):
     for k in values:
         if k not in validators:
             context.remainders[k] = values[k]
+
+    if len(failures) == 0:
+        for m in fetch_verifier_methods(cls):
+            f = m.verify(instance, context)
+            if f is not None:
+                failures.add(m.name, f)
 
     return ValidationResult(instance, failures, context)
 

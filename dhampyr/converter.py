@@ -17,11 +17,12 @@ class ConversionFailure(ValidationFailure):
 
 
 class Converter:
-    def __init__(self, name, func, is_iter, inferred=None, *args, **kwargs):
+    def __init__(self, name, func, is_iter, inferred=None, strict=False, *args, **kwargs):
         self.name = name
         self.func = func
         self.is_iter = is_iter
         self.inferred = inferred
+        self.strict = strict
         self.args = args
         self.kwargs = kwargs
 
@@ -44,6 +45,9 @@ class Converter:
             A failure in conversion or `None` when it succeeded.
         """
         def conv(v, i=None):
+            if self.strict and isinstance(self.func, type):
+                if not isinstance(v, self.func):
+                    return None, ConversionFailure("Type unmatched.", self)
             try:
                 c = context
                 if c and i is not None:

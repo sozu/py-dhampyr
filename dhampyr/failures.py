@@ -82,6 +82,22 @@ class ValidationPath:
         else:
             raise ValueError(f"Unsupported operand type(s) for +: 'ValidationPath' and '{type(other)}'")
 
+    def under(self, other):
+        """
+        Checks whether this path is under given path.
+
+        Parameters
+        ----------
+        other: ValidationPath
+            Another path.
+
+        Returns
+        -------
+        bool
+            `True` when this path is under given path.
+        """
+        return len(self.path) >= len(other.path) and all([s == o for s, o in zip(self.path, other.path)])
+
     @classmethod
     def of(cls, path):
         items = path.split(".")
@@ -130,8 +146,13 @@ class CompositeValidationFailure(ValidationFailure):
 
     Failures are traversable in iteration context.
 
-    >>> dict(map(lambda f: (f[0], f[1].name), r))
+    >>> dict(map(lambda f: (str(f[0]), f[1].name), r))
     {'a': 'int', 'b': 'missing'}
+
+    `in` operator is available to know whether the error exists or not at a path.
+
+    >>> [p in r.failures for p in ('a', 'b', 'c')]
+    [True, True, False]
     """
     def __init__(self):
         super().__init__()
@@ -158,13 +179,23 @@ class CompositeValidationFailure(ValidationFailure):
         if isinstance(key, str):
             f = self.failures
             for p in ValidationPath.of(key):
-                f = f[p]
+                f = f and (f[p] if p in f else None)
             return f
         else:
-            return self.failures[key]
+            return self.failures.get(key, None)
 
     def __contains__(self, key):
-        return key in self.failures
+        if isinstance(key, str):
+            cf = self
+            for p in ValidationPath.of(key):
+                if not isinstance(cf, CompositeValidationFailure):
+                    return False
+                if p not in cf.failures:
+                    return False
+                cf = cf.failures[p]
+            return True
+        else:
+            return key in self.failures
 
     def add(self, key, f):
         self.failures[key] = f
