@@ -24,6 +24,14 @@ class Verifier:
         self.args = args
         self.kwargs = kwargs
 
+    def __get__(self, instance, owner):
+        if instance is None:
+            return self
+        else:
+            def call(*args, **kwargs):
+                return self.func(instance, *args, **kwargs)
+            return call
+
     def verify(self, value, context=None):
         """
         Verifies a value with verification function.

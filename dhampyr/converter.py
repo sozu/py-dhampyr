@@ -1,3 +1,4 @@
+import builtins
 from .context import ValidationContext, contextual_invoke
 from .failures import ValidationFailure, CompositeValidationFailure, PartialFailure
 
@@ -46,8 +47,11 @@ class Converter:
         """
         def conv(v, i=None):
             if self.strict and isinstance(self.func, type):
-                if not isinstance(v, self.func):
-                    return None, ConversionFailure("Type unmatched.", self)
+                if hasattr(builtins, self.func.__qualname__):
+                    if isinstance(v, self.func):
+                        return v, None
+                    else:
+                        return None, ConversionFailure("Type unmatched.", self)
             try:
                 c = context
                 if c and i is not None:

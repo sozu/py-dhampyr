@@ -53,3 +53,14 @@ def test_fail():
     assert cxt.ver2
     assert r.failures['ver1'] is None
     assert r.failures['ver2'] is not None
+
+
+def test_invoke():
+    cxt = ValidationContext().put(ver1=False, ver2=False, value=0)
+    val = validate_dict(V, dict(
+        v1 = "2",
+        v2 = "abc",
+    ), cxt).get()
+
+    assert val.ver1() is True
+    assert val.ver2(ValidationContext().put(value=3)) is False
