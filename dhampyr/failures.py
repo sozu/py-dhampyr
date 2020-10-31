@@ -6,6 +6,17 @@ from itertools import chain
 class ValidationFailure(Exception):
     """
     Base exception type for every validation failure.
+
+    Attributes
+    ----------
+    name: str
+        The name to distinguish the type of failure.
+    message: str
+        Error message format.
+    args: [object]
+        Values being used as indexed arguments to build error message.
+    kwargs: {str:object}
+        Values being used as keyword arguments to build error message.
     """
     def __init__(self, name="invalid", message="Validation failed", args=None, kwargs=None):
         super().__init__(message)
@@ -30,18 +41,34 @@ class ValidationFailure(Exception):
 
     @property
     def args(self):
-        return self._args
+        return self._args or []
 
     @property
     def kwargs(self):
-        return self._kwargs
+        return self._kwargs or {}
 
     @classmethod
     def abort(cls, *args, **kwargs):
+        """
+        Utility method to raise a failure from custom converter/verifier function.
+
+        By invokiing this method on appropriate failure type, `ConversionFailure` or `VerificationFailure`,
+        correct failure object of the type is constructed and raised.
+
+        Parameters
+        ----------
+        args: [object]
+            Arguments for error message.
+        kwargs: {str:object}
+            Keyword arguments for error message.
+        """
         raise PartialFailure(partial(cls, *args, **kwargs))
 
 
 class MalformedFailure(ValidationFailure):
+    """
+    Validation failure raised when the input object is not dictionary-like.
+    """
     def __init__(self):
         super().__init__("malformed", "Input of the validation suite is not like dictinoary.")
 
@@ -100,6 +127,14 @@ class ValidationPath:
 
     @classmethod
     def of(cls, path):
+        """
+        Create an instance of this class by textual representation of a path.
+
+        Parameters
+        ----------
+        path: str
+            Textual representation of a path.
+        """
         items = path.split(".")
         def parse_index(s):
             m = ValidationPath.PATH_ITEM_REGEXP.match(s)

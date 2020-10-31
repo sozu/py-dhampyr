@@ -1,8 +1,9 @@
 from enum import Enum
+import inspect
 from functools import partial
 from typing import get_type_hints
 from .validator import Validator, ValidationResult
-from .converter import Converter
+from .converter import Converter, is_builtin
 from .verifier import Verifier
 from .config import default_config
 from .converter import ValidationContext
@@ -186,31 +187,25 @@ def converter(func):
 
     def to_converter(f, it, name=None):
         if isinstance(f, set):
-            # runs nested validation with a type in the set.
-            t = next(iter(f))
+            t = next(iter(f), None)
+            if not isinstance(t, type):
+                raise TypeError(f"Set specifier must contain only a type.")
             def g(v, cxt: ValidationContext):
                 r = validate_dict(t, v, cxt)
                 return r.or_else(throw)
-            return Converter(name or t.__name__, g, it, t)
+            return Converter(name or t.__name__, g, it, dict, t)
         elif isinstance(f, partial):
-            args = []
-            kwargs = {}
-            origin = _unpack_partial(f, args, kwargs)
-            inferred = None
-            if isinstance(origin, type):
-                inferred = origin
-            else:
-                inferred = get_type_hints(origin).get('return', None)
-            return Converter(origin.__name__, f, it, inferred, *args, **kwargs)
+            ff, n, t_in, t_out, args, kwargs = analyze_specifier(f, (), {})
+            return Converter(name or n, ff, it, t_in, t_out, False, *args, **kwargs)
         elif isinstance(f, type) and issubclass(f, Enum):
             # uses item access of the Enum.
-            return Converter(name or f.__name__, f.__getitem__, it, f)
+            return Converter(name or f.__name__, f.__getitem__, it, str, f)
         elif isinstance(f, type):
-            # invokes constructor.
-            return Converter(name or f.__name__, f, it, f)
+            ff, n, t_in, t_out, args, kwargs = analyze_specifier(f, (), {})
+            return Converter(name or n, ff, it, t_in, t_out, False, *args, **kwargs)
         elif callable(f):
-            # invokes function.
-            return Converter(name or f.__name__, f, it, get_type_hints(f).get('return', None))
+            ff, n, t_in, t_out, args, kwargs = analyze_specifier(f, (), {})
+            return Converter(name or n, ff, it, t_in, t_out, False, *args, **kwargs)
         else:
             raise TypeError("Given value is not valid Converter specifier.")
 
@@ -248,13 +243,82 @@ def verifier(func):
     if isinstance(func, Verifier):
         return func
     elif isinstance(func, partial):
-        args = []
-        kwargs = {}
-        origin = _unpack_partial(func, args, kwargs)
-        return Verifier(origin.__name__, func, is_iter, *args, **kwargs)
+        ff, n, t_in, t_out, args, kwargs = analyze_specifier(func, (), {})
+        return Verifier(n, func, is_iter, *args, **kwargs)
     elif callable(func):
         return Verifier(func.__name__, func, is_iter)
     elif isinstance(func, tuple):
-        return Verifier(func[0], func[1], is_iter)
+        ff, n, t_in, t_out, args, kwargs = analyze_specifier(func[1], (), {})
+        return Verifier(func[0], func[1], is_iter, *args, **kwargs)
     else:
         raise TypeError("Given value is not valid Verifier specifier.")
+
+
+def analyze_specifier(f, args, kwargs):
+    """
+    Extract informations from a specifier for `Converter` or `Verifier`.
+
+    Parameters
+    ----------
+    f: type | partial | callable
+        Specifier.
+    args: [object]
+        Accumulated indexed arguments.
+    kwargs: {str:object}
+        Accumulated keyword arguments.
+
+    Returns
+    -------
+    callable
+        Callable object to perform its specification by taking a value.
+    str
+        Name of the specifier.
+    type
+        Inferred input type, or `None` if no information is found.
+    type
+        Inferred output type, or `None` if no information is found.
+    [object]
+        Indexed arguments to pass to `Converter` or `Verifier`.
+    {str:object}
+        Keyword arguments to pass to `Converter` or `Verifier`.
+    """
+    if is_builtin(f):
+        return f, f.__name__, f, f, args, kwargs
+    elif isinstance(f, type):
+        # check the second argument of constructor.
+        params = _args_remains(f.__init__, args, kwargs)
+        if len(params) == 2:
+            t_in = get_type_hints(f.__init__).get(params[1].name, None)
+            return f, f.__name__, t_in, f, args, kwargs
+        else:
+            raise TypeError(f"Constructor of {f} has multiple unassigned arguments.")
+    elif isinstance(f, partial):
+        # check the first argument of original function that is not assigned value.
+        p_args = f.args
+        p_kwargs = f.keywords
+
+        args = args + p_args
+        kwargs = dict(kwargs, **p_kwargs)
+
+        r = analyze_specifier(f.func, args, kwargs)
+
+        return (f, ) + r[1:]
+    elif callable(f):
+        # check the first argument.
+        params = _args_remains(f, args, kwargs)
+        if len(params) == 1:
+            hints = get_type_hints(f)
+            return f, f.__name__, hints.get(params[0].name, None), hints.get('return', None), args, kwargs
+        else:
+            raise TypeError(f"Function {f} has multiple unassigned arguments.")
+    else:
+        # unknown.
+        return None
+
+
+def _args_remains(f, args, kwargs):
+    params = list(inspect.signature(f).parameters.items())[len(args):]
+    params = [p for n, p in params if n not in kwargs]
+    no_defaults = [p for p in params if p.default is inspect.Parameter.empty]
+    return params
+

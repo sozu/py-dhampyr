@@ -14,7 +14,8 @@ class TestConverter:
         assert c.name == "conv"
         assert c.func is conv
         assert not c.is_iter
-        assert c.inferred is None
+        assert c.accepts is None
+        assert c.returns is None
         assert r == 1
         assert f is None
 
@@ -26,7 +27,8 @@ class TestConverter:
         assert c.name == "conv"
         assert c.func is conv
         assert not c.is_iter
-        assert c.inferred is str
+        assert c.accepts is None
+        assert c.returns is str
         assert r == 1
         assert f is None
 
@@ -36,7 +38,8 @@ class TestConverter:
         assert c.name == "int"
         assert c.func is int
         assert not c.is_iter
-        assert c.inferred is int
+        assert c.accepts is int
+        assert c.returns is int
         assert r == 1
         assert f is None
 
@@ -48,7 +51,8 @@ class TestConverter:
         r, f = c.convert("e2")
         assert c.name == "E"
         assert not c.is_iter
-        assert c.inferred is E
+        assert c.accepts is str
+        assert c.returns is E
         assert r == E.e2
         assert f is None
 
@@ -57,7 +61,8 @@ class TestConverter:
         r, f = c.convert("100")
         assert c.name == "int"
         assert not c.is_iter
-        assert c.inferred is int
+        assert c.accepts is int
+        assert c.returns is int
         assert c.kwargs == dict(base=2)
         assert r == 4
         assert f is None
@@ -71,7 +76,8 @@ class TestConverter:
         r, f = c.convert("100")
         assert c.name == "p0"
         assert not c.is_iter
-        assert c.inferred is int
+        assert c.accepts is None
+        assert c.returns is int
         assert c.kwargs == dict(inc=3, base=2)
         assert r == 7
         assert f is None
@@ -84,7 +90,8 @@ class TestConverter:
         r, f = c.convert(dict(c1=1, c2="a"))
         assert c.name == "C"
         assert not c.is_iter
-        assert c.inferred is C
+        assert c.accepts is dict
+        assert c.returns is C
         assert isinstance(r, C)
         assert r.c1 == 1
         assert r.c2 == "a"
@@ -95,7 +102,8 @@ class TestConverter:
         r, f = c.convert("123")
         assert c.name == "int"
         assert c.is_iter
-        assert c.inferred is int
+        assert c.accepts is int
+        assert c.returns is int
         assert r == [1,2,3]
         assert f is None
 
@@ -104,7 +112,8 @@ class TestConverter:
         r, f = c.convert("1")
         assert c.name == "conv"
         assert not c.is_iter
-        assert c.inferred is int
+        assert c.accepts is int
+        assert c.returns is int
         assert r == 1
         assert f is None
 
@@ -113,7 +122,8 @@ class TestConverter:
         r, f = c.convert("123")
         assert c.name == "conv"
         assert c.is_iter
-        assert c.inferred is int
+        assert c.accepts is int
+        assert c.returns is int
         assert r == [1,2,3]
         assert f is None
 

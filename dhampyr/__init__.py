@@ -6,6 +6,7 @@ from .verifier import Verifier, VerificationFailure
 from .context import ValidationContext
 from .validator import Validator, ValidationResult
 from .api import v, validate_dict, converter, verifier
+from .variable import x
 
 __all__ = [
     "ValidationResult",
@@ -25,6 +26,7 @@ __all__ = [
     "Verifier",
     "VerificationFailure",
     "ValidationContext",
+    "x",
 ]
 
 # for compatibility

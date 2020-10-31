@@ -17,12 +17,17 @@ class ConversionFailure(ValidationFailure):
         self.converter = converter
 
 
+def is_builtin(t):
+    return isinstance(t, type) and hasattr(builtins, t.__qualname__)
+
+
 class Converter:
-    def __init__(self, name, func, is_iter, inferred=None, strict=False, *args, **kwargs):
+    def __init__(self, name, func, is_iter, accepts=None, returns=None, strict=False, *args, **kwargs):
         self.name = name
         self.func = func
         self.is_iter = is_iter
-        self.inferred = inferred
+        self.accepts = accepts
+        self.returns = returns
         self.strict = strict
         self.args = args
         self.kwargs = kwargs
@@ -46,12 +51,11 @@ class Converter:
             A failure in conversion or `None` when it succeeded.
         """
         def conv(v, i=None):
-            if self.strict and isinstance(self.func, type):
-                if hasattr(builtins, self.func.__qualname__):
-                    if isinstance(v, self.func):
-                        return v, None
-                    else:
-                        return None, ConversionFailure("Type unmatched.", self)
+            if self.strict and is_builtin(self.func):
+                if isinstance(v, self.func):
+                    return v, None
+                else:
+                    return None, ConversionFailure("Type unmatched.", self)
             try:
                 c = context
                 if c and i is not None:

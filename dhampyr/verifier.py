@@ -17,7 +17,7 @@ class VerificationFailure(ValidationFailure):
 
 
 class Verifier:
-    def __init__(self, name, func, is_iter, *args, **kwargs):
+    def __init__(self, name, func, is_iter, message=None, *args, **kwargs):
         self.name = name
         self.func = func
         self.is_iter = is_iter
