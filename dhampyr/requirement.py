@@ -1,21 +1,30 @@
 from enum import Enum, auto
 from .failures import ValidationFailure
+from .context import ValidationContext
 
 
-def _fails(error):
+def _fails(error, skip, allow):
     return error(), False
 
-def _skips(error):
+def _skips(error, skip, allow):
     return None, False
 
-def _continue(error):
+def _continue(error, skip, allow):
     return None, True
+
+def _contextual(error, skip, allow):
+    return None, not skip
+
+def _requires(error, skip, allow):
+    return (None, False) if allow else (error(), False)
 
 
 class RequirementPolicy(Enum):
     FAIL = _fails
     SKIP = _skips
     CONTINUE = _continue
+    CONTEXTUAL = _contextual
+    REQUIRES = _requires
 
 
 VALUE_MISSING = object()
@@ -42,6 +51,7 @@ class Requirement:
         self.null = null
         self.empty = empty
         self.predicates = predicates or []
+        self._requires = False
 
     @property
     def requires(self):
@@ -64,7 +74,7 @@ class Requirement:
 
         return False
 
-    def validate(self, value):
+    def validate(self, value, context=None):
         """
         Apply requirement policies to a value.
 
@@ -78,21 +88,27 @@ class Requirement:
         ValidationFailure
             A failure returned from requirement policy or continuation function.
         bool
-            The flag notifying the caller to continue to successive methods.
+            The flag notifying the caller to continue to subsequent phases.
         """
+        context = context or ValidationContext.default()
+
         if value == VALUE_MISSING:
-            return self.missing(lambda: MissingFailure())
+            return self.missing(lambda: MissingFailure(), False, False)
         elif value is None:
-            return self.null(lambda: NullFailure())
+            skip, allow = context.config.skip_null, context.config.allow_null
+
+            return self.null(lambda: NullFailure(), skip, allow)
         else:
+            skip, allow = context.config.skip_empty, context.config.allow_empty
+
             if self._check_empty(value):
-                return self.empty(lambda: EmptyFailure())
+                return self.empty(lambda: EmptyFailure(), skip, allow)
 
             for f, p in self.predicates:
                 if callable(f) and f(v):
-                    return p(lambda: EmptyFailure())
+                    return p(lambda: EmptyFailure(), skip, allow)
                 elif f == v:
-                    return p(lambda: EmptyFailure())
+                    return p(lambda: EmptyFailure(), skip, allow)
 
             return None, True
 

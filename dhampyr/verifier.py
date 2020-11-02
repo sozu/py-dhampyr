@@ -48,6 +48,8 @@ class Verifier:
         ValidationFailure
             A failure which arised in the verification. When it succeeded, `None`.
         """
+        context = context or ValidationContext.default()
+
         def ver(v, i=None):
             try:
                 c = context

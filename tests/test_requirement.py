@@ -1,5 +1,6 @@
 import  pytest
 from dhampyr.requirement import RequirementPolicy, Requirement, VALUE_MISSING, MissingFailure, NullFailure, EmptyFailure
+from dhampyr.context import ValidationContext
 
 
 class TestMissing:
@@ -22,6 +23,12 @@ class TestMissing:
         assert f is None
         assert b
 
+    def test_requires(self):
+        r = Requirement(RequirementPolicy.REQUIRES)
+        f, b = r.validate(VALUE_MISSING)
+        assert f.name == "missing"
+        assert not b
+
 
 class TestNull:
     def test_fail(self):
@@ -42,6 +49,31 @@ class TestNull:
         f, b = r.validate(None)
         assert f is None
         assert b
+
+    def test_contextual(self):
+        r = Requirement(null=RequirementPolicy.CONTEXTUAL)
+        f, b = r.validate(None)
+        assert f is None
+        assert not b
+
+    def test_contextual_continue(self):
+        r = Requirement(null=RequirementPolicy.CONTEXTUAL)
+        f, b = r.validate(None, ValidationContext().configure(skip_null=False))
+        assert f is None
+        assert b
+
+    def test_requires(self):
+        r = Requirement(null=RequirementPolicy.REQUIRES)
+        f, b = r.validate(None)
+        assert isinstance(f, NullFailure)
+        assert f.name == "null"
+        assert not b
+
+    def test_requires_allowed(self):
+        r = Requirement(null=RequirementPolicy.REQUIRES)
+        f, b = r.validate(None, ValidationContext().configure(allow_null=True))
+        assert f is None
+        assert not b
 
 
 class TestEmpty:
@@ -64,3 +96,27 @@ class TestEmpty:
         assert f is None
         assert b
 
+    def test_contextual(self):
+        r = Requirement(empty=RequirementPolicy.CONTEXTUAL)
+        f, b = r.validate("")
+        assert f is None
+        assert not b
+
+    def test_contextual_continue(self):
+        r = Requirement(empty=RequirementPolicy.CONTEXTUAL)
+        f, b = r.validate("", ValidationContext().configure(skip_empty=False))
+        assert f is None
+        assert b
+
+    def test_requires(self):
+        r = Requirement(empty=RequirementPolicy.REQUIRES)
+        f, b = r.validate("")
+        assert isinstance(f, EmptyFailure)
+        assert f.name == "empty"
+        assert not b
+
+    def test_requires_allowed(self):
+        r = Requirement(empty=RequirementPolicy.REQUIRES)
+        f, b = r.validate("", ValidationContext().configure(allow_empty=True))
+        assert f is None
+        assert not b

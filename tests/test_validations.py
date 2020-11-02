@@ -281,7 +281,7 @@ class TestNest:
                     p2=[dict(c1="34", c2="5")],
                 ),
             ],
-        ), ValidationContext(joint_failure=False))
+        ), ValidationContext().configure(join_on_fail=False))
         assert not r
         assert [str(p) for p, f in r.failures] \
             == ["v1.p1", "v1.p2", "v2[0].p1", "v2[0].p2"]

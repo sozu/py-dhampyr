@@ -1,4 +1,5 @@
 from collections import OrderedDict
+from .config import default_config
 from .failures import CompositeValidationFailure, ValidationPath
 
 
@@ -20,18 +21,55 @@ class ValidationContext:
     """
     Represents execution context for a validation suite.
 
-    Contexts are generated for each validating value respectively and they are managed under root context in tree structure.
+    A context is generated and works for each input which is dictionary-like object.
+    Threfore, hierarchical validation declared by `{type}` style converter generates context tree where each node corresponds to an input.
+
+    The context is available to pass informations to validation logics via its attributes set beforehand by `put()`.
+
+    >>> context = ValidationContext()
+    >>> context.put(a=1, b=2)
+    >>> context.a
+    1
+
+    Those attributes are also accessible from child contexts and able to be overwritten also.
+
+    >>> child = context["child"]
+    >>> child.put(a=3)
+    >>> (child.a, child.b)
+    (3, 2)
+
+    Each context works on its own `ValidationConfiguration` which is set to be global configuration by default.
+    The configuration controls the behavior of validation logics internally.
+    It can be overwritten by `configure()` without any effect to global or parent configuration.
+
+    Additionally, each context stores values which are not validated but exist in the input as a result of validation.
+    The context returned by `validate_dict()` has `remainders` property holding those values.
+    Be aware that this dictionary is not cleared automatically when a context instance is reused.
 
     Attributes
     ----------
+    path: ValidationPath
+        Validation path where this context works.
     remainders: {str: object}
-        Dictionary holding values which was not validated.
+        Dictionary holding values which were not validated.
     """
-    def __init__(self, path=None, joint_failure=None, parent=None):
+    @classmethod
+    def default(cls, holder=[]):
+        """
+        Returns shared context instance which contains no attributes and refer default configuration.
+
+        Do not call this method from application code.
+        """
+        if not holder:
+            holder.append(cls(config = default_config()))
+        return holder[0]
+
+    def __init__(self, path=None, parent=None, config=None):
         self._contexts = {}
-        self.remainders = {}
         self.path = path or ValidationPath([])
-        self.joint_failure = joint_failure if joint_failure is not None else  parent.joint_failure if parent else True
+        self.remainders = {}
+        self._parent = parent
+        self._config = config or (None if parent else default_config().derive())
         self._attributes = ContextAttributes(parent._attributes if parent else None)
 
     def __contains__(self, key):
@@ -40,6 +78,32 @@ class ValidationContext:
     def put(self, **attributes):
         for k, v in attributes.items():
             self._attributes._attributes[k] = v
+        return self
+
+    @property
+    def config(self):
+        return self._config if self._config else self._parent.config
+
+    def rebase(self, another):
+        if not self._config:
+            self._config = self._parent.config.derive()
+        self._config.base = another
+        return self
+
+    def configure(self, **kwargs):
+        """
+        Set this context's own configuration parameters.
+
+        Parameters
+        ----------
+        kwargs: {str:object}
+            Attributes declared in `ValidationConfig` are available. Unknown key raises `KeyError`.
+        """
+        if self._config:
+            self._config.set(**kwargs)
+        else:
+            self._config = self._parent.config.derive() 
+            self._config.set(**kwargs)
         return self
 
     def __getattr__(self, key):
@@ -61,7 +125,6 @@ class ValidationContext:
         """
         return self._contexts.setdefault(key, ValidationContext(
             self.path + key,
-            joint_failure=self.joint_failure,
             parent=self,
         ))
 

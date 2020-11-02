@@ -2,6 +2,7 @@ import pytest
 from enum import Enum
 from functools import partial
 from dhampyr.failures import ValidationFailure, CompositeValidationFailure
+from dhampyr.context import ValidationContext
 from dhampyr.api import v, converter, verifier
 
 
@@ -127,6 +128,18 @@ class TestConverter:
         assert r == [1,2,3]
         assert f is None
 
+    def test_context_arg(self):
+        def conv(val, cxt:ValidationContext):
+            return int(val) + cxt.val
+        c = converter(conv)
+        r, f = c.convert("3", ValidationContext().put(val=2))
+        assert c.name == "conv"
+        assert not c.is_iter
+        assert c.accepts is None
+        assert c.returns is None
+        assert r == 5
+        assert f is None
+
 
 class TestVerifier:
     def test_func(self):
@@ -195,3 +208,15 @@ class TestVerifier:
         assert isinstance(f, CompositeValidationFailure)
         assert len(f) == 1
         assert f[2].name == "v"
+
+    def test_context_arg(self):
+        def ver(val, cxt:ValidationContext):
+            return val > cxt.val
+        vf = verifier(ver)
+        f = vf.verify(4, ValidationContext().put(val=3))
+        assert vf.name == "ver"
+        assert vf.func is ver
+        assert not vf.is_iter
+        assert f is None
+        f = vf.verify(3)
+        assert f is not None

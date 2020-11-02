@@ -5,7 +5,6 @@ from typing import get_type_hints
 from .validator import Validator, ValidationResult
 from .converter import Converter, is_builtin
 from .verifier import Verifier
-from .config import default_config
 from .converter import ValidationContext
 from .failures import ValidationFailure, MalformedFailure, CompositeValidationFailure
 from .requirement import Requirement, VALUE_MISSING
@@ -33,7 +32,6 @@ def v(conv, *vers):
     Validator
         Created `Validator`.
     """
-    config = default_config()
     c = converter(conv)
     vs = list(map(verifier, vers))
     return Validator(c, vs)
@@ -149,15 +147,6 @@ def _like_dictionary(values):
             and hasattr(values, '__iter__') \
             and not isinstance(values, (list, str))
     )
-
-
-def _unpack_partial(p, args, kwargs):
-    args += p.args
-    kwargs.update(p.keywords)
-    if isinstance(p.func, partial):
-        return _unpack_partial(p.func, args, kwargs)
-    else:
-        return p.func
 
 
 def converter(func):
@@ -318,7 +307,7 @@ def analyze_specifier(f, args, kwargs):
 
 def _args_remains(f, args, kwargs):
     params = list(inspect.signature(f).parameters.items())[len(args):]
-    params = [p for n, p in params if n not in kwargs]
+    params = [p for n, p in params if n not in kwargs and p.annotation != ValidationContext]
     no_defaults = [p for p in params if p.default is inspect.Parameter.empty]
     return params
 
