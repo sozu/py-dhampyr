@@ -229,7 +229,7 @@ class Validator:
             A flag to notify caller to use alternative value.
         """
         if self.config:
-            context = context.rebase(self.config) if context else ValidationContext().rebase(self.config)
+            context = context._rebase(self.config) if context else ValidationContext()._rebase(self.config)
         else:
             context = context or ValidationContext.default()
 

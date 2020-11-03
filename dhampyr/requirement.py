@@ -34,7 +34,7 @@ class Requirement:
     """
     Represents the method which requires a value from dictionary-like object.
     """
-    def __init__(self, missing=RequirementPolicy.SKIP, null=RequirementPolicy.SKIP, empty=RequirementPolicy.SKIP, predicates=None):
+    def __init__(self, missing=RequirementPolicy.SKIP, null=RequirementPolicy.SKIP, empty=RequirementPolicy.SKIP):
         """
         Initializes the object with requirement policies.
 
@@ -50,7 +50,6 @@ class Requirement:
         self.missing = missing
         self.null = null
         self.empty = empty
-        self.predicates = predicates or []
         self._requires = False
 
     @property
@@ -104,11 +103,12 @@ class Requirement:
             if self._check_empty(value):
                 return self.empty(lambda: EmptyFailure(), skip, allow)
 
-            for f, p in self.predicates:
-                if callable(f) and f(v):
-                    return p(lambda: EmptyFailure(), skip, allow)
-                elif f == v:
-                    return p(lambda: EmptyFailure(), skip, allow)
+            for t, f in context.config.empty_specs:
+                if isinstance(value, t):
+                    if callable(f) and f(value):
+                        return EmptyFailure(), False
+                    elif f == value:
+                        return EmptyFailure(), False
 
             return None, True
 

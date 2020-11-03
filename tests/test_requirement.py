@@ -120,3 +120,13 @@ class TestEmpty:
         f, b = r.validate("", ValidationContext().configure(allow_empty=True))
         assert f is None
         assert not b
+
+    def test_emptiness(self):
+        r = Requirement(empty=RequirementPolicy.FAIL)
+        f, b = r.validate("a", ValidationContext().configure(empty_specs=[(str, lambda x: x == "a")]))
+        assert isinstance(f, EmptyFailure)
+        assert f.name == "empty"
+        assert not b
+        f, b = r.validate("a", ValidationContext().configure(empty_specs=[(str, lambda x: x == "b")]))
+        assert f is None
+        assert b

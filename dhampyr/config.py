@@ -81,21 +81,65 @@ def default_config(config=ValidationConfiguration(
 
 
 def dhampyr(**kwargs):
+    """
+    Starts `with` context to modify default configuration or decorates a class to be applied certain configurations.
+
+    When invoked alone, this function returns a context manager object.
+    Updates done to attributes of the object in the context is applied to default configuration when exiting the context.
+
+    >>> with dhampyr() as cfg:
+    >>>     cfg.skip_null = False
+    >>>     cfg.join_on_fail = False
+    >>>     cfg.isinstance_builtin = True
+
+    When used as decorator, validations for decorated class will be done under the given configurations.
+
+    >>> @dhampyr(skip_null=False, join_on_fail=False, isinstance_builtin=True)
+    >>> class V:
+    >>>     v1: v(int)
+    >>>     v2: v([str])
+
+    This function also works as meta decorator which gives another decorator the ability to apply configurations to decorated type.
+
+    >>> @dhampyr(skip_null=False, join_on_fail=False, isinstance_builtin=True)
+    >>> def meta(t):
+    >>>     return t
+    >>>
+    >>> @meta
+    >>> class V:
+    >>>     v1: v(int)
+    >>>     v2: v([str])
+
+    Parameters
+    ----------
+    kwargs: {str:object}
+        Effective only when this function is used as a decorator. Attributes declared in `ValidationConfig` are available.
+    """
     class Configurable:
         def __init__(self, **kw):
             self.kwargs = kw.copy()
             self.target = None
             self.config = ValidationConfiguration()
 
-        def __call__(self, typ=None):
-            if typ:
+        def __call__(self, arg):
+            if isinstance(arg, type):
                 self.target = default_config().derive(**self.kwargs)
                 from .validator import Validator
-                for k, v in [(k, v) for k, v in (typ.__annotations__ or {}).items() if isinstance(v, Validator)]:
+                for k, v in [(k, v) for k, v in (arg.__annotations__ or {}).items() if isinstance(v, Validator)]:
                     v.config = self.target
+                return arg
+            elif callable(arg): 
+                @wraps(arg)
+                def inner(*args, **kw):
+                    decorated = arg(*args, **kw)
+                    if isinstance(decorated, type):
+                        return self(decorated)
+                    else:
+                        # When decorator target is not a type, do nothing.
+                        return decorated
+                return inner
             else:
-                self.target = default_config()
-            return typ
+                raise ValueError("The target of @dhampyr decorator must be a type or another decorator function.")
 
         def __enter__(self):
             if not self.target:

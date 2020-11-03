@@ -1,6 +1,6 @@
 import pytest
 from dhampyr.config import dhampyr, default_config
-from dhampyr.api import v
+from dhampyr.api import v, validate_dict
 
 
 class TestDhampyr:
@@ -9,10 +9,25 @@ class TestDhampyr:
             with dhampyr() as cfg:
                 cfg.skip_null = False
                 cfg.join_on_fail = False
+                cfg.isinstance_builtin = True
+
             config = default_config()
 
             assert config.skip_null is False
             assert config.join_on_fail is False
+            assert config.isinstance_builtin is True
+
+            class V:
+                v1: v(lambda x: 0 if x is None else 1)
+                v2: v([int])
+
+            r = validate_dict(V, dict(v1 = None, v2 = ["a", 1, "2"]))
+            assert not r
+            assert r.failures['v1'] is None
+            assert r.get().v1 == 0
+            assert r.failures['v2'] is not None
+            assert r.get().v2 == [None, 1, None]
+
         finally:
             config = default_config()
             config.skip_null = True
@@ -25,12 +40,39 @@ class TestDhampyr:
             config.join_on_fail = True
 
     def test_decorator(self):
-        @dhampyr(skip_null=False, join_on_fail=False)
+        @dhampyr(skip_null=False, join_on_fail=False, isinstance_builtin=True)
         class V:
-            v1: v(int)
-            v2: v(str)
+            v1: v(lambda x: 0 if x is None else 1)
+            v2: v([int])
 
         v1v = V.__annotations__['v1']
         assert v1v.config.skip_null == False
         assert v1v.config.join_on_fail == False
 
+        r = validate_dict(V, dict(v1 = None, v2 = ["a", 1, "2"]))
+        assert not r
+        assert r.failures['v1'] is None
+        assert r.get().v1 == 0
+        assert r.failures['v2'] is not None
+        assert r.get().v2 == [None, 1, None]
+
+    def test_meta_decorator(self):
+        @dhampyr(skip_null=False, join_on_fail=False, isinstance_builtin=True)
+        def meta(t):
+            return t
+
+        @meta
+        class V:
+            v1: v(lambda x: 0 if x is None else 1)
+            v2: v([int])
+
+        v1v = V.__annotations__['v1']
+        assert v1v.config.skip_null == False
+        assert v1v.config.join_on_fail == False
+
+        r = validate_dict(V, dict(v1 = None, v2 = ["a", 1, "2"]))
+        assert not r
+        assert r.failures['v1'] is None
+        assert r.get().v1 == 0
+        assert r.failures['v2'] is not None
+        assert r.get().v2 == [None, 1, None]

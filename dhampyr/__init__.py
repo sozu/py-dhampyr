@@ -1,5 +1,5 @@
 from .requirement import Requirement, RequirementPolicy, MissingFailure
-from .config import default_config
+from .config import dhampyr
 from .failures import ValidationFailure, MalformedFailure, CompositeValidationFailure
 from .converter import Converter, ConversionFailure
 from .verifier import Verifier, VerificationFailure
@@ -9,6 +9,7 @@ from .api import v, validate_dict, converter, verifier
 from .variable import x
 
 __all__ = [
+    "dhampyr",
     "ValidationResult",
     "Validator",
     "Requirement",

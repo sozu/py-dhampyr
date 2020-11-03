@@ -75,40 +75,6 @@ class ValidationContext:
     def __contains__(self, key):
         return key in self._contexts
 
-    def put(self, **attributes):
-        for k, v in attributes.items():
-            self._attributes._attributes[k] = v
-        return self
-
-    @property
-    def config(self):
-        return self._config if self._config else self._parent.config
-
-    def rebase(self, another):
-        if not self._config:
-            self._config = self._parent.config.derive()
-        self._config.base = another
-        return self
-
-    def configure(self, **kwargs):
-        """
-        Set this context's own configuration parameters.
-
-        Parameters
-        ----------
-        kwargs: {str:object}
-            Attributes declared in `ValidationConfig` are available. Unknown key raises `KeyError`.
-        """
-        if self._config:
-            self._config.set(**kwargs)
-        else:
-            self._config = self._parent.config.derive() 
-            self._config.set(**kwargs)
-        return self
-
-    def __getattr__(self, key):
-        return getattr(self._attributes, key)
-
     def __getitem__(self, key):
         """
         Returns child context by its key.
@@ -127,6 +93,68 @@ class ValidationContext:
             self.path + key,
             parent=self,
         ))
+
+    def __getattr__(self, key):
+        return getattr(self._attributes, key)
+
+    def put(self, **attributes):
+        """
+        Put arbitrary attributes to this context.
+
+        Parameters
+        ----------
+        attributes: {str:object}
+            Key-values pairs of attributes.
+
+        Returns
+        -------
+        ValidationContext
+            This instance.
+        """
+        for k, v in attributes.items():
+            self._attributes._attributes[k] = v
+        return self
+
+    @property
+    def config(self):
+        """
+        Configuration used in this context.
+
+        Don't modify this object directly, use `configure()` instead.
+
+        Returns
+        -------
+        ValidationConfiguration
+            Configuration used in this context.
+        """
+        return self._config if self._config else self._parent.config
+
+    def configure(self, **kwargs):
+        """
+        Set this context's own configuration parameters.
+
+        Parameters
+        ----------
+        kwargs: {str:object}
+            Attributes declared in `ValidationConfig` are available. Unknown key raises `KeyError`.
+
+        Returns
+        -------
+        ValidationContext
+            This instance.
+        """
+        if self._config:
+            self._config.set(**kwargs)
+        else:
+            self._config = self._parent.config.derive() 
+            self._config.set(**kwargs)
+        return self
+
+    def _rebase(self, another):
+        if not self._config:
+            self._config = self._parent.config.derive()
+        self._config.base = another
+        return self
 
 
 def contextual_invoke(f, v, context):
