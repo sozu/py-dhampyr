@@ -140,7 +140,7 @@ class Validator:
     This phase verifies converted object by a sequence of `Verifier`s.
     Validator can have 0 or multiple verification phases.
     """
-    def __init__(self, converter, verifiers, config=None):
+    def __init__(self, converter, verifiers, config=None, key=None):
         self.config = config
         self.requirement = Requirement(
             missing = RequirementPolicy.SKIP,
@@ -149,6 +149,7 @@ class Validator:
         )
         self.converter = converter
         self.verifiers = verifiers
+        self.key = key
 
     def __pos__(self):
         self.requirement._requires = True

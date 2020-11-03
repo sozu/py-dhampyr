@@ -26,6 +26,21 @@ class TestMalformed:
         assert [(str(p), f.name) for p, f in r.failures] == [("", "malformed")]
 
 
+class TestKey:
+    def test_success(self):
+        class C:
+            v1: v(int, key="value-1")
+        r = validate_dict(C, {"value-1": "3"})
+        assert r.get().v1 == 3
+
+    def test_failure(self):
+        class C:
+            v1: v(int, key="value-1")
+        r = validate_dict(C, {"value-1": "a"})
+        assert r.failures['v1'] is not None
+        assert [(str(p), f.name) for p,f in r.failures] == [("v1", "int")]
+
+
 class E(Enum):
     E1 = auto()
     E2 = auto()

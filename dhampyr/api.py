@@ -16,16 +16,18 @@ except ImportError:
     is_multidict = lambda d: False
 
 
-def v(conv, *vers):
+def v(conv, *vers, key=None):
     """
     Creates a `Validator`.
 
     Parameters
     ----------
-    conv: Converter equivalent
-        Value available for the argument of `converter`.
-    vers: [Verifier equivalents]
-        Values available for the argument of `verifier`.
+    conv: Converter
+        Converter specifier. See `converter()` to know what kind of values are available.
+    vers: [Verifier]
+        Verifier specifiers. See `verifier()` to know what kind of values are available.
+    key: str
+        Key of the target value is the input dictionary. If `None`, declared attribute name is used to obtain the value.
 
     Returns
     -------
@@ -34,7 +36,7 @@ def v(conv, *vers):
     """
     c = converter(conv)
     vs = list(map(verifier, vers))
-    return Validator(c, vs)
+    return Validator(c, vs, key=key)
 
 
 def parse_validators(cls):
@@ -112,9 +114,11 @@ def validate_dict(cls, values, context=None, *args, **kwargs):
     validators = parse_validators(cls)
 
     for k, v in validators.items():
+        key = v.key or k
+
         cxt = context[k]
 
-        val = get(values, k, v.accept_list) if k in values else VALUE_MISSING
+        val = get(values, key, v.accept_list) if key in values else VALUE_MISSING
 
         validated, f, use_alt = v.validate(val, cxt)
 
