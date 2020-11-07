@@ -2,6 +2,7 @@ from enum import Enum
 import inspect
 from functools import partial
 from typing import get_type_hints
+from .config import type_config
 from .validator import Validator, ValidationResult
 from .converter import Converter, is_builtin
 from .verifier import Verifier
@@ -98,48 +99,57 @@ def validate_dict(cls, values, context=None, *args, **kwargs):
     """
     context = context or ValidationContext()
 
-    if not _like_dictionary(values):
-        return ValidationResult(None, MalformedFailure(), context)
+    with context.on(cls):
+        if not _like_dictionary(values):
+            return ValidationResult(None, MalformedFailure(), context)
 
-    instance = cls(*args, *kwargs)
+        instance = cls(*args, *kwargs)
 
-    def get(d, k, as_list):
-        if as_list:
-            return d.getlist(k) if is_multidict(d) else d[k]
-        else:
-            return d[k]
+        def get(d, k, as_list):
+            if as_list:
+                return d.getlist(k) if is_multidict(d) else d[k]
+            else:
+                return d[k]
 
-    failures = CompositeValidationFailure()
+        failures = CompositeValidationFailure()
 
-    validators = parse_validators(cls)
+        validators = parse_validators(cls)
 
-    for k, v in validators.items():
-        key = v.key or k
+        validated_keys = set()
 
-        cxt = context[k]
+        for k, v in validators.items():
+            key = v.key or k
 
-        val = get(values, key, v.accept_list) if key in values else VALUE_MISSING
+            validated_keys.add(key)
 
-        validated, f, use_alt = v.validate(val, cxt)
+            val = get(values, key, v.accept_list) if key in values else VALUE_MISSING
 
-        if validated is not None:
-            setattr(instance, k, validated)
-        if f:
-            failures.add(k, f)
+            with context[k, True] as cxt:
+                validated, f, use_alt = v.validate(val, cxt)
 
-        if use_alt and hasattr(cls, k):
-            setattr(instance, k, getattr(cls, k))
+            if validated is not None:
+                setattr(instance, k, validated)
+            if f:
+                failures.add(k, f)
 
-    # TODO: items() of MultiDict returns only first element associated with each key respectively.
-    for k in values:
-        if k not in validators:
-            context.remainders[k] = values[k]
+            if use_alt and hasattr(cls, k):
+                setattr(instance, k, getattr(cls, k))
 
-    if len(failures) == 0:
-        for m in fetch_verifier_methods(cls):
-            f = m.verify(instance, context)
-            if f is not None:
-                failures.add(m.name, f)
+        if not context.config.ignore_remainders:
+            for k in values:
+                # TODO: items() of MultiDict returns only first element associated with each key respectively.
+                if k not in validated_keys:
+                    if context.config.share_context:
+                        holder = _holder_for_path(context.remainders, context.path + k)
+                        holder[k] = values[k]
+                    else:
+                        context.remainders[k] = values[k]
+
+        if len(failures) == 0:
+            for m in fetch_verifier_methods(cls):
+                f = m.verify(instance, context)
+                if f is not None:
+                    failures.add(m.name, f)
 
     return ValidationResult(instance, failures, context)
 
@@ -151,6 +161,15 @@ def _like_dictionary(values):
             and hasattr(values, '__iter__') \
             and not isinstance(values, (list, str))
     )
+
+
+def _holder_for_path(holder, path):
+    for key in path.path[:-1]:
+        if key not in holder:
+            holder[key] = {}
+        holder = holder[key]
+
+    return holder
 
 
 def converter(func):

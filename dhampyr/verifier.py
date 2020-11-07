@@ -48,14 +48,13 @@ class Verifier:
         ValidationFailure
             A failure which arised in the verification. When it succeeded, `None`.
         """
-        context = context or ValidationContext.default()
-
         def ver(v, i=None):
             try:
-                c = context
-                if c and i is not None:
-                    c = c[i]
-                r = contextual_invoke(self.func, v, c)
+                if context and i is not None:
+                    with context[i, True] as c:
+                        r = contextual_invoke(self.func, v, c)
+                else:
+                    r = contextual_invoke(self.func, v, context)
                 return None if r else VerificationFailure(f"Verification by {self.name} failed.", self)
             except PartialFailure as e:
                 return e.create(verifier=self)

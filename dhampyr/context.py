@@ -1,5 +1,5 @@
 from collections import OrderedDict
-from .config import default_config
+from .config import default_config, ValidationConfiguration, ConfigurationStack
 from .failures import CompositeValidationFailure, ValidationPath
 
 
@@ -22,7 +22,7 @@ class ValidationContext:
     Represents execution context for a validation suite.
 
     A context is generated and works for each input which is dictionary-like object.
-    Threfore, hierarchical validation declared by `{type}` style converter generates context tree where each node corresponds to an input.
+    Each key in the object has its own context and the nested validation produces context hierarchy.
 
     The context is available to pass informations to validation logics via its attributes set beforehand by `put()`.
 
@@ -61,7 +61,7 @@ class ValidationContext:
         Do not call this method from application code.
         """
         if not holder:
-            holder.append(cls(config = default_config()))
+            holder.append(cls(config = default_config().derive()))
         return holder[0]
 
     def __init__(self, path=None, parent=None, config=None):
@@ -69,7 +69,8 @@ class ValidationContext:
         self.path = path or ValidationPath([])
         self.remainders = {}
         self._parent = parent
-        self._config = config or (None if parent else default_config().derive())
+        self._config_stack = parent._config_stack if parent else ConfigurationStack(default_config())
+        self._config = config or (None if parent else self._config_stack.derive())
         self._attributes = ContextAttributes(parent._attributes if parent else None)
 
     def __contains__(self, key):
@@ -89,13 +90,43 @@ class ValidationContext:
         ValidationContext
             Child context. If context does not exist on the key yet, new context is created and returned.
         """
-        return self._contexts.setdefault(key, ValidationContext(
-            self.path + key,
-            parent=self,
-        ))
+        key, internal_call = key if isinstance(key, tuple) else (key, False)
+
+        if self.config.share_context:
+            if internal_call:
+                self.path += key
+            return self
+        else:
+            return self._contexts.setdefault(key, ValidationContext(
+                self.path + key,
+                parent=self,
+            ))
 
     def __getattr__(self, key):
         return getattr(self._attributes, key)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, stacktrace):
+        if self.config.share_context and (not self._parent or self._parent.config.share_context):
+            self.path.pop()
+
+    def on(self, type_):
+        """
+        Starts context validating a dictionary for given type.
+
+        Parameters
+        ----------
+        type_: type
+            Type to assign values by validate_dict().
+
+        Returns
+        -------
+        ConfigurationStack.TypeContext
+            A context object.
+        """
+        return self._config_stack.on(type_)
 
     def put(self, **attributes):
         """
@@ -148,12 +179,6 @@ class ValidationContext:
         else:
             self._config = self._parent.config.derive() 
             self._config.set(**kwargs)
-        return self
-
-    def _rebase(self, another):
-        if not self._config:
-            self._config = self._parent.config.derive()
-        self._config.base = another
         return self
 
 

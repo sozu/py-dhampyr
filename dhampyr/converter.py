@@ -49,20 +49,20 @@ class Converter:
         ValidationFailure
             A failure in conversion or `None` when it succeeded.
         """
-        context = context or ValidationContext.default()
-
         def conv(v, i=None):
-            if context.config.isinstance_any:
-                return (v, None) if isinstance(v, self.func) else (None, ConversionFailure("Type unmatched.", self))
-            elif context.config.isinstance_builtin:
-                if is_builtin(self.func):
+            if context:
+                if context.config.isinstance_any:
                     return (v, None) if isinstance(v, self.func) else (None, ConversionFailure("Type unmatched.", self))
+                elif context.config.isinstance_builtin:
+                    if is_builtin(self.func):
+                        return (v, None) if isinstance(v, self.func) else (None, ConversionFailure("Type unmatched.", self))
 
             try:
-                c = context
-                if c and i is not None:
-                    c = c[i]
-                return contextual_invoke(self.func, v, c), None
+                if context and i is not None:
+                    with context[i, True] as c:
+                        return contextual_invoke(self.func, v, c), None
+                else:
+                    return contextual_invoke(self.func, v, context), None
             except PartialFailure as e:
                 return None, e.create(converter=self)
             except ValidationFailure as e:

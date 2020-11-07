@@ -108,6 +108,10 @@ class ValidationPath:
             self.path += other.path
         else:
             raise ValueError(f"Unsupported operand type(s) for +: 'ValidationPath' and '{type(other)}'")
+        return self
+
+    def pop(self):
+        self.path.pop()
 
     def under(self, other):
         """

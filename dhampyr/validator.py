@@ -140,8 +140,7 @@ class Validator:
     This phase verifies converted object by a sequence of `Verifier`s.
     Validator can have 0 or multiple verification phases.
     """
-    def __init__(self, converter, verifiers, config=None, key=None):
-        self.config = config
+    def __init__(self, converter, verifiers, key=None):
         self.requirement = Requirement(
             missing = RequirementPolicy.SKIP,
             null = RequirementPolicy.CONTEXTUAL,
@@ -229,10 +228,7 @@ class Validator:
         bool
             A flag to notify caller to use alternative value.
         """
-        if self.config:
-            context = context._rebase(self.config) if context else ValidationContext()._rebase(self.config)
-        else:
-            context = context or ValidationContext.default()
+        context = context or ValidationContext.default()
 
         join_on_fail = context.config.join_on_fail
 

@@ -34,7 +34,6 @@ class TestDhampyr:
             config.skip_empty = True
             config.allow_null = False
             config.allow_empty = False
-            config.empty_specs = []
             config.isinstance_builtin = False
             config.isinstance_any = False
             config.join_on_fail = True
@@ -44,10 +43,6 @@ class TestDhampyr:
         class V:
             v1: v(lambda x: 0 if x is None else 1)
             v2: v([int])
-
-        v1v = V.__annotations__['v1']
-        assert v1v.config.skip_null == False
-        assert v1v.config.join_on_fail == False
 
         r = validate_dict(V, dict(v1 = None, v2 = ["a", 1, "2"]))
         assert not r
@@ -65,10 +60,6 @@ class TestDhampyr:
         class V:
             v1: v(lambda x: 0 if x is None else 1)
             v2: v([int])
-
-        v1v = V.__annotations__['v1']
-        assert v1v.config.skip_null == False
-        assert v1v.config.join_on_fail == False
 
         r = validate_dict(V, dict(v1 = None, v2 = ["a", 1, "2"]))
         assert not r

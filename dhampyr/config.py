@@ -23,9 +23,14 @@ class ValidationConfiguration:
         If true, `Converter` declared by any type checks that the input is instance of the type instead of applying constructor.
     join_on_fail: bool
         If true, failed iterable values are joined into single `None`.
+    ignore_remainders: bool
+        If true, not validated values are simply discarded.
+    share_context: bool
+        If true, `ValidationContext` is shared in an invocation of `validate_dict()`.
     """
     def __init__(
         self,
+        name = None,
         skip_null = None,
         skip_empty = None,
         allow_null = None,
@@ -34,7 +39,10 @@ class ValidationConfiguration:
         isinstance_builtin = None,
         isinstance_any = None,
         join_on_fail = None,
+        ignore_remainders = None,
+        share_context = None,
     ):
+        self.name = name
         self.skip_null = skip_null
         self.skip_empty = skip_empty
         self.allow_null = allow_null
@@ -43,9 +51,11 @@ class ValidationConfiguration:
         self.isinstance_builtin = isinstance_builtin
         self.isinstance_any = isinstance_any
         self.join_on_fail = join_on_fail
+        self.ignore_remainders = ignore_remainders
+        self.share_context = share_context
 
     def derive(self, **kwargs):
-        kwargs.setdefault('empty_specs', self.empty_specs.copy())
+        #kwargs.setdefault('empty_specs', [])
         return DerivingConfiguration(self, **kwargs)
 
 
@@ -56,7 +66,7 @@ class DerivingConfiguration(ValidationConfiguration):
 
     def __getattribute__(self, key):
         value = object.__getattribute__(self, key)
-        return value if value is not None else object.__getattribute__(self.base, key)
+        return value if value is not None else getattr(self.base, key)
 
     def set(self, **kwargs):
         for k, v in kwargs.items():
@@ -67,17 +77,70 @@ class DerivingConfiguration(ValidationConfiguration):
         return self
 
 
+class ConfigurationStack:
+    """
+    Stack of configurations which mocks `ValidationConfiguration`.
+    """
+    def __init__(self, base, stack=None):
+        self.base = base
+        self.stack = stack or []
+
+    def __getattr__(self, key):
+        for config in self.stack[::-1]:
+            value = getattr(config, key)
+            if value is not None:
+                return value
+
+        return getattr(self.base, key)
+
+    def __enter__(self):
+        pass
+
+    def __exit__(self, exc_type, exc_value, stacktrace):
+        if self.stack:
+            self.pop()
+
+    def on(self, t):
+        config = type_config(t)
+        if config:
+            self.push(config)
+        return self
+
+    def derive(self, **kwargs):
+        return DerivingConfiguration(self, **kwargs)
+
+    def push(self, config):
+        self.stack.append(config)
+        return self
+
+    def pop(self):
+        self.stack.pop()
+        return self
+
+
 def default_config(config=ValidationConfiguration(
+    name = "default",
     skip_null = True,
     skip_empty = True,
     allow_null = False,
     allow_empty = False,
-    empty_specs = [],
+    empty_specs = [
+        (str, lambda x: x == ""),
+        (bytes, lambda x: len(x) == 0),
+    ],
     isinstance_builtin = False,
     isinstance_any = False,
     join_on_fail = True,
+    ignore_remainders = False,
+    share_context = False,
 )):
     return config
+
+
+def type_config(t, config=None, holder={}):
+    if isinstance(config, ValidationConfiguration):
+        holder[t] = config
+    return holder.get(t, None)
 
 
 def dhampyr(**kwargs):
@@ -123,10 +186,11 @@ def dhampyr(**kwargs):
 
         def __call__(self, arg):
             if isinstance(arg, type):
-                self.target = default_config().derive(**self.kwargs)
-                from .validator import Validator
-                for k, v in [(k, v) for k, v in (arg.__annotations__ or {}).items() if isinstance(v, Validator)]:
-                    v.config = self.target
+                self.target = ValidationConfiguration(**self.kwargs)
+                #from .validator import Validator
+                #for k, v in [(k, v) for k, v in (arg.__annotations__ or {}).items() if isinstance(v, Validator)]:
+                #    v.config = self.target
+                type_config(arg, self.target)
                 return arg
             elif callable(arg): 
                 @wraps(arg)

@@ -235,18 +235,3 @@ class TestIterativeVerify:
         assert r == [1, None, 3]
         assert f[1].name == "lt"
         assert not b
-
-
-class TestInnerConfig:
-    def _validator(self):
-        return Validator(
-            Converter("c", lambda x: 1 if x is None else 0, False),
-            [Verifier("v", lambda x: x > 0, False)],
-        )
-
-    def test_skip(self):
-        v = self._validator()
-        assert v.validate(None) == (None, None, True)
-        v.config = default_config().derive(skip_null=False)
-        assert v.validate(None) == (1, None, False)
-        assert v.validate(None, ValidationContext().configure(skip_null=True)) == (None, None, True)

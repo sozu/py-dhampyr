@@ -3,6 +3,7 @@ from enum import Enum, auto
 from functools import partial as p
 from dhampyr.api import v, parse_validators, validate_dict
 from dhampyr.context import ValidationContext
+from dhampyr.config import dhampyr
 
 
 class TestParse:
@@ -41,6 +42,7 @@ class TestKey:
         assert [(str(p), f.name) for p,f in r.failures] == [("v1", "int")]
 
 
+# Types
 class E(Enum):
     E1 = auto()
     E2 = auto()
@@ -49,6 +51,7 @@ class E(Enum):
     E5 = auto()
 
 
+# Verifier functions
 def gt0(v):
     return v > 0
 
@@ -58,36 +61,43 @@ def lt(v):
 def gt(v, th):
     return v > th
 
-class V1:
-    # don't fail
-    v1: v(str) = "v1"
-    # required
-    v2: +v(str) = "v2"
-    # converter
-    v3: v(int) = 3
-    # converter without default
-    v4: v(int)
-    # named converter
-    v5: v(("c5", int)) = 5
-    # Enum
-    v6: v(E) = E.E2
-    # converter with partial
-    v7: v(p(int, base=2)) = 7
-    # verifier
-    v8: v(int, gt0) = 8
-    # verifier without default
-    v9: v(int, gt0)
-    # multiple verifiers
-    v10: v(int, gt0, lt) = 10
-    # named verifier
-    v11: v(int, ("v13", gt0)) = 11
-    # verifier with partial
-    v12: v(int, p(gt, th=0)) = 12
+def longer(vs):
+    return len(vs) > 3
 
 
 class TestFlat:
-    def test_empty(self):
-        r = validate_dict(V1, dict())
+    def _validate(self, values, share=False):
+        class V:
+            # don't fail
+            v1: v(str) = "v1"
+            # required
+            v2: +v(str) = "v2"
+            # converter
+            v3: v(int) = 3
+            # converter without default
+            v4: v(int)
+            # named converter
+            v5: v(("c5", int)) = 5
+            # Enum
+            v6: v(E) = E.E2
+            # converter with partial
+            v7: v(p(int, base=2)) = 7
+            # verifier
+            v8: v(int, gt0) = 8
+            # verifier without default
+            v9: v(int, gt0)
+            # multiple verifiers
+            v10: v(int, gt0, lt) = 10
+            # named verifier
+            v11: v(int, ("v13", gt0)) = 11
+            # verifier with partial
+            v12: v(int, p(gt, th=0)) = 12
+
+        return validate_dict(V, values, ValidationContext().configure(share_context=share))
+
+    @pytest.mark.parametrize("share", [False, True])
+    def test_empty(self, share):
+        r = self._validate(dict(), share)
         assert not r
         assert [str(p) for p, f in r.failures] == ["v2"]
         assert r.get().v1 == "v1"
@@ -101,9 +111,11 @@ class TestFlat:
         assert r.get().v10 == 10
         assert r.get().v11 == 11
         assert r.get().v12 == 12
+        assert (not share) or r.context._contexts == {}
 
-    def test_success(self):
-        r = validate_dict(V1, dict(
+    @pytest.mark.parametrize("share", [False, True])
+    def test_success(self, share):
+        r = self._validate(dict(
             v1 = "s1",
             v2 = "s2",
             v3 = "30",
@@ -116,7 +128,7 @@ class TestFlat:
             v10 = "100",
             v11 = "110",
             v12 = "120",
-        ))
+        ), share)
         assert r
         assert not r.failures
         assert r.get().v1 == "s1"
@@ -131,9 +143,11 @@ class TestFlat:
         assert r.get().v10 == 100
         assert r.get().v11 == 110
         assert r.get().v12 == 120
+        assert (not share) or r.context._contexts == {}
 
-    def test_fail(self):
-        r = validate_dict(V1, dict(
+    @pytest.mark.parametrize("share", [False, True])
+    def test_fail(self, share):
+        r = self._validate(dict(
             v1 = "",
             v2 = None,
             v3 = "f3",
@@ -146,7 +160,7 @@ class TestFlat:
             v10 = "1000",
             v11 = "-11",
             v12 = "-12",
-        ))
+        ), share)
         assert not r
         assert [str(p) for p, f in r.failures] == [f"v{i}" for i in range(2, 13)]
         assert r.get().v1 == "v1"
@@ -161,26 +175,26 @@ class TestFlat:
         assert r.get().v10 == 10
         assert r.get().v11 == 11
         assert r.get().v12 == 12
-
-
-def longer(vs):
-    return len(vs) > 3
-
-
-class V2:
-    v1: v([int]) = [1]
-    v2: +v([int]) = [2]
-    v3: v([("c2", int)]) = [3]
-    v4: v([E]) = [E.E5]
-    v5: v([p(int, base=2)]) = [5]
-    v6: v([int], [gt0]) = [6]
-    v7: v([int], [gt0], [lt]) = [7]
-    v8: v([int], [gt0], longer) = [8]
+        assert (not share) or r.context._contexts == {}
 
 
 class TestList:
-    def test_empty(self):
-        r = validate_dict(V2, dict())
+    def _validate(self, values, share):
+        class V:
+            v1: v([int]) = [1]
+            v2: +v([int]) = [2]
+            v3: v([("c2", int)]) = [3]
+            v4: v([E]) = [E.E5]
+            v5: v([p(int, base=2)]) = [5]
+            v6: v([int], [gt0]) = [6]
+            v7: v([int], [gt0], [lt]) = [7]
+            v8: v([int], [gt0], longer) = [8]
+
+        return validate_dict(V, values, ValidationContext().configure(share_context=share))
+
+    @pytest.mark.parametrize("share", [False, True])
+    def test_empty(self, share):
+        r = self._validate(dict(), share)
         assert not r
         assert [str(p) for p, f in r.failures] == ["v2"]
         assert r.get().v1 == [1]
@@ -191,9 +205,11 @@ class TestList:
         assert r.get().v6 == [6]
         assert r.get().v7 == [7]
         assert r.get().v8 == [8]
+        assert (not share) or r.context._contexts == {}
 
-    def test_success(self):
-        r = validate_dict(V2, dict(
+    @pytest.mark.parametrize("share", [False, True])
+    def test_success(self, share):
+        r = self._validate(dict(
             v1 = "123",
             v2 = "123",
             v3 = "123",
@@ -202,7 +218,7 @@ class TestList:
             v6 = ["1", "2", "3"],
             v7 = ["1", "2", "3"],
             v8 = "1234",
-        ))
+        ), share)
         assert r
         assert not r.failures
         assert r.get().v1 == [1, 2, 3]
@@ -213,9 +229,11 @@ class TestList:
         assert r.get().v6 == [1, 2, 3]
         assert r.get().v7 == [1, 2, 3]
         assert r.get().v8 == [1, 2, 3, 4]
+        assert (not share) or r.context._contexts == {}
 
-    def test_fail(self):
-        r = validate_dict(V2, dict(
+    @pytest.mark.parametrize("share", [False, True])
+    def test_fail(self, share):
+        r = self._validate(dict(
             v1 = "1ab",
             v2 = "",
             v3 = "1a3",
@@ -224,7 +242,7 @@ class TestList:
             v6 = ["1", "-2", "3"],
             v7 = ["1", "102", "3"],
             v8 = "123",
-        ))
+        ), share)
         assert not r
         assert [str(p) for p, f in r.failures] == [
             "v1[1]", "v1[2]",
@@ -249,45 +267,53 @@ class TestList:
         assert r.get().v6 == [6]
         assert r.get().v7 == [7]
         assert r.get().v8 == [8]
-
-
-class C:
-    c1: +v([int], [gt0]) = [1]
-    c2: +v(int, gt0) = 2
-
-
-class P:
-    p1: +v({C}) = None
-    p2: +v([{C}]) = []
-
-
-class V3:
-    v1: +v({P}) = None
-    v2: +v([{P}]) = []
+        assert (not share) or r.context._contexts == {}
 
 
 class TestNest:
-    def test_empty(self):
-        r = validate_dict(V3, dict())
+    def _validate(self, values, context=None, share=False):
+        class C:
+            c1: +v([int], [gt0]) = [1]
+            c2: +v(int, gt0) = 2
+
+        class P:
+            p1: +v({C}) = None
+            p2: +v([{C}]) = []
+
+        class V:
+            v1: +v({P}) = None
+            v2: +v([{P}]) = []
+
+        context = (context or ValidationContext()).configure(share_context=share)
+
+        return validate_dict(V, values, context)
+
+    @pytest.mark.parametrize("share", [False, True])
+    def test_empty(self, share):
+        r = self._validate(dict(), share=share)
         assert not r
         assert [str(p) for p, f in r.failures] \
             == ["v1", "v2"]
         assert r.get().v1 is None
         assert r.get().v2 == []
+        assert (not share) or r.context._contexts == {}
 
-    def test_empty_parent(self):
-        r = validate_dict(V3, dict(
+    @pytest.mark.parametrize("share", [False, True])
+    def test_empty_parent(self, share):
+        r = self._validate(dict(
             v1 = dict(),
             v2 = [dict()],
-        ))
+        ), share=share)
         assert not r
         assert [str(p) for p, f in r.failures] \
             == ["v1.p1", "v1.p2", "v2[0].p1", "v2[0].p2"]
         assert r.get().v1 is None
         assert r.get().v2 == []
+        assert (not share) or r.context._contexts == {}
 
-    def test_empty_parent_unjointed(self):
-        r = validate_dict(V3, dict(
+    @pytest.mark.parametrize("share", [False, True])
+    def test_empty_parent_unjointed(self, share):
+        r = self._validate(dict(
             v1 = dict(),
             v2 = [
                 dict(),
@@ -296,7 +322,7 @@ class TestNest:
                     p2=[dict(c1="34", c2="5")],
                 ),
             ],
-        ), ValidationContext().configure(join_on_fail=False))
+        ), ValidationContext().configure(join_on_fail=False), share=share)
         assert not r
         assert [str(p) for p, f in r.failures] \
             == ["v1.p1", "v1.p2", "v2[0].p1", "v2[0].p2"]
@@ -306,9 +332,11 @@ class TestNest:
         assert r.get().v2[1].p1.c2 == 4
         assert r.get().v2[1].p2[0].c1 == [3,4]
         assert r.get().v2[1].p2[0].c2 == 5
+        assert (not share) or r.context._contexts == {}
 
-    def test_success(self):
-        r = validate_dict(V3, dict(
+    @pytest.mark.parametrize("share", [False, True])
+    def test_success(self, share):
+        r = self._validate(dict(
             v1 = dict(
                 p1 = dict(c1 = "12", c2 = "3"),
                 p2 = [
@@ -332,7 +360,7 @@ class TestNest:
                     ],
                 ),
             ],
-        ))
+        ), share=share)
         assert r
         assert not r.failures
         assert r.get().v1.p1.c1 == [1,2]
@@ -353,9 +381,11 @@ class TestNest:
         assert r.get().v2[1].p2[0].c2 == 8
         assert r.get().v2[1].p2[1].c1 == [6,7,8]
         assert r.get().v2[1].p2[1].c2 == 9
+        assert (not share) or r.context._contexts == {}
 
-    def test_fail(self):
-        r = validate_dict(V3, dict(
+    @pytest.mark.parametrize("share", [False, True])
+    def test_fail(self, share):
+        r = self._validate(dict(
             v1 = dict(
                 p1 = dict(c1 = "12", c2 = "-3"),
                 p2 = [
@@ -379,7 +409,7 @@ class TestNest:
                     ],
                 ),
             ],
-        ))
+        ), share=share)
         assert not r
         assert [str(p) for p, f in r.failures] \
             == [
@@ -392,3 +422,193 @@ class TestNest:
                 "v2[0].p2[1].c1[2]",
                 "v2[0].p2[1].c2",
             ]
+        assert (not share) or r.context._contexts == {}
+
+
+class TestRemainders:
+    def _validate(self, context=None, share=False):
+        class C:
+            c1: +v([int]) = [1]
+            c2: +v(int) = 2
+
+        class P:
+            p1: +v({C}) = None
+            p2: +v([{C}]) = []
+
+        class V:
+            v1: +v({P}) = None
+            v2: +v([{P}]) = []
+
+        context = (context or ValidationContext()).configure(share_context=share)
+
+        return validate_dict(V, dict(
+            v1 = dict(
+                p1 = dict(c1 = ["1"], c2 = "2", c3 = "c3"),
+                p2 = [
+                    dict(c1 = ["11"], c2 = "22", c3 = "c3_1"),
+                    dict(c1 = ["11"], c2 = "22", c3 = "c3_2"),
+                ],
+                p3 = 43,
+            ),
+            v2 = [
+                dict(
+                    p1 = dict(c1 = ["1"], c2 = "2", c3 = "c23_1"),
+                    p2 = [
+                        dict(c1 = ["11"], c2 = "22", c3 = "c23_1_1"),
+                        dict(c1 = ["11"], c2 = "22", c3 = "c23_1_2"),
+                    ],
+                    p3 = 54,
+                ),
+                dict(
+                    p1 = dict(c1 = ["1"], c2 = "2", c3 = "c23_2"),
+                    p2 = [
+                        dict(c1 = ["11"], c2 = "22", c3 = "c23_2_1"),
+                        dict(c1 = ["11"], c2 = "22", c3 = "c23_2_2"),
+                    ],
+                    p3 = 65,
+                ),
+            ],
+            v3 = 32,
+        ), context)
+
+    @pytest.mark.parametrize("share", [False, True])
+    def test_remainders(self, share):
+        r = self._validate(share=share)
+        if share:
+            assert r.context.remainders == dict(
+                v1 = dict(
+                    p1 = dict(c3 = "c3"),
+                    p2 = {0: dict(c3 = "c3_1"), 1: dict(c3 = "c3_2") },
+                    p3 = 43,
+                ),
+                v2 = {
+                    0: dict(
+                        p1 = dict(c3 = "c23_1"),
+                        p2 = {0: dict(c3 = "c23_1_1"), 1: dict(c3 = "c23_1_2")},
+                        p3 = 54,
+                    ),
+                    1: dict(
+                        p1 = dict(c3 = "c23_2"),
+                        p2 = {0: dict(c3 = "c23_2_1"), 1: dict(c3 = "c23_2_2")},
+                        p3 = 65,
+                    ),
+                },
+                v3 = 32,
+            )
+            assert r.context._contexts == {}
+        else:
+            assert r.context.remainders == dict(v3 = 32)
+            assert r.context["v1"].remainders == dict(p3 = 43)
+            assert r.context["v1"]["p1"].remainders == dict(c3 = "c3")
+            assert r.context["v1"]["p2"][0].remainders == dict(c3 = "c3_1")
+            assert r.context["v1"]["p2"][1].remainders == dict(c3 = "c3_2")
+            assert r.context["v2"][0].remainders == dict(p3 = 54)
+            assert r.context["v2"][1].remainders == dict(p3 = 65)
+            assert r.context["v2"][0]["p1"].remainders == dict(c3 = "c23_1")
+            assert r.context["v2"][1]["p1"].remainders == dict(c3 = "c23_2")
+            assert r.context["v2"][0]["p2"][0].remainders == dict(c3 = "c23_1_1")
+            assert r.context["v2"][0]["p2"][1].remainders == dict(c3 = "c23_1_2")
+            assert r.context["v2"][1]["p2"][0].remainders == dict(c3 = "c23_2_1")
+            assert r.context["v2"][1]["p2"][1].remainders == dict(c3 = "c23_2_2")
+            assert r.context._contexts != {}
+
+    def test_ignore(self):
+        c = ValidationContext()
+        c["v1"].configure(ignore_remainders = True)
+        c["v2"][0].configure(ignore_remainders = True)
+        r = self._validate(c)
+        assert r.context.remainders == dict(v3 = 32)
+        assert r.context["v1"].remainders == dict()
+        assert r.context["v1"]["p1"].remainders == dict()
+        assert r.context["v1"]["p2"][0].remainders == dict()
+        assert r.context["v1"]["p2"][1].remainders == dict()
+        assert r.context["v2"][0].remainders == dict()
+        assert r.context["v2"][1].remainders == dict(p3 = 65)
+        assert r.context["v2"][0]["p1"].remainders == dict()
+        assert r.context["v2"][1]["p1"].remainders == dict(c3 = "c23_2")
+        assert r.context["v2"][0]["p2"][0].remainders == dict()
+        assert r.context["v2"][0]["p2"][1].remainders == dict()
+        assert r.context["v2"][1]["p2"][0].remainders == dict(c3 = "c23_2_1")
+        assert r.context["v2"][1]["p2"][1].remainders == dict(c3 = "c23_2_2")
+        assert r.context._contexts != {}
+
+
+class TestTypeConfiguration:
+    def _validate(self, values, context=None):
+        @dhampyr(ignore_remainders=True)
+        class Q:
+            q1: +v(int)
+            q2: +v(int)
+
+        @dhampyr(isinstance_builtin=True)
+        class P:
+            p1: +v({Q}) = None
+            p2: +v({Q}) = None
+
+        class V:
+            v1: +v({P}) = None
+            v2: +v({Q}) = None
+
+        return validate_dict(V, values, context=context)
+
+    def test_typed(self):
+        c = ValidationContext()
+        c["v1"]["p2"].configure(isinstance_builtin=False, ignore_remainders=False)
+        c["v2"].configure(isinstance_builtin=True)
+        c["v2"]["q1"].configure(isinstance_builtin=False)
+
+        r = self._validate(dict(
+            v1 = dict(
+                p1 = dict(q1 = 1, q2 = 2, q3 = 11),
+                p2 = dict(q1 = "1", q2 = "2", q3 = 12),
+                p3 = 3,
+            ),
+            v2 = dict(q1 = "1", q2 = 2, q3 = 21),
+            v3 = 4,
+        ), c)
+
+        value = r.get()
+        failures = r.failures
+        assert (value.v1.p1.q1, value.v1.p1.q2) == (1, 2)
+        assert (value.v1.p2.q1, value.v1.p2.q2) == (1, 2)
+        assert (value.v1.p2.q1, value.v1.p2.q2) == (1, 2)
+        assert (value.v2.q1, value.v2.q2) == (1, 2)
+        assert c.remainders == dict(v3 = 4)
+        assert c["v1"].remainders == dict(p3 = 3)
+        assert c["v2"].remainders == dict()
+        assert c["v1"]["p1"].remainders == dict()
+        assert c["v1"]["p2"].remainders == dict(q3 = 12)
+        assert r.context._contexts != {}
+
+    @pytest.mark.parametrize("share", [False, True])
+    def test_fail(self, share):
+        c = ValidationContext().configure(share_context=share)
+
+        r = self._validate(dict(
+            v1 = dict(
+                p1 = dict(q1 = 1, q2 = 2, q3 = 11),
+                p2 = dict(q1 = "1", q2 = "2", q3 = 12),
+                p3 = 3,
+            ),
+            v2 = dict(q1 = "1", q2 = 2, q3 = 21),
+            v3 = 4,
+        ), c)
+
+        value = r.get()
+        failures = r.failures
+        assert value.v1 is None
+        assert (value.v2.q1, value.v2.q2) == (1, 2)
+        assert {str(p) for p, _ in failures} == {"v1.p2.q1", "v1.p2.q2"}
+        if share:
+            assert c.remainders == dict(
+                v1 = dict(p3 = 3),
+                v3 = 4,
+            )
+            assert r.context._contexts == {}
+        else:
+            assert c.remainders == dict(v3 = 4)
+            assert c["v1"].remainders == dict(p3 = 3)
+            assert c["v2"].remainders == dict()
+            assert c["v1"]["p1"].remainders == dict()
+            assert c["v1"]["p2"].remainders == dict()
+            assert r.context._contexts != {}
