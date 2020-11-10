@@ -64,6 +64,15 @@ class Requirement:
         """
         return any(map(lambda r: r == RequirementPolicy.FAIL, (self.missing, self.null, self.empty)))
 
+    def _check_empty(self, value):
+        if isinstance(value, str) and value == "":
+            return True
+
+        if isinstance(value, bytes) and len(value) == 0:
+            return True
+
+        return False
+
     def validate(self, value, context=None):
         """
         Apply requirement policies to a value.
@@ -90,6 +99,9 @@ class Requirement:
             return self.null(lambda: NullFailure(), skip, allow)
         else:
             skip, allow = context.config.skip_empty, context.config.allow_empty
+
+            if self._check_empty(value):
+                return self.empty(lambda: EmptyFailure(), skip, allow)
 
             for t, f in context.config.empty_specs:
                 if isinstance(value, t):

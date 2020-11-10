@@ -60,11 +60,11 @@ class Variable:
     def len(self):
         return self._sync(lambda x: len(x), 'len')
 
-    def in_(self, v):
-        return self._sync(lambda x: x in v, 'in', holder=v)
+    def in_(self, *v):
+        return self._sync(lambda x: x in v, 'in', value=v)
 
     def has(self, v):
-        return self._sync(lambda x: v in x, 'has', holder=v)
+        return self._sync(lambda x: v in x, 'has', value=v)
 
     def inv(self):
         return self._sync(lambda x: not x, 'inv')

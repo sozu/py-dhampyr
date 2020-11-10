@@ -124,10 +124,7 @@ def default_config(config=ValidationConfiguration(
     skip_empty = True,
     allow_null = False,
     allow_empty = False,
-    empty_specs = [
-        (str, lambda x: x == ""),
-        (bytes, lambda x: len(x) == 0),
-    ],
+    empty_specs = [],
     isinstance_builtin = False,
     isinstance_any = False,
     join_on_fail = True,

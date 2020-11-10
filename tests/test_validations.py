@@ -163,6 +163,7 @@ class TestFlat:
         ), share)
         assert not r
         assert [str(p) for p, f in r.failures] == [f"v{i}" for i in range(2, 13)]
+        assert r.failures["v7"].kwargs == dict(base=2)
         assert r.get().v1 == "v1"
         assert r.get().v2 == "v2"
         assert r.get().v3 == 3
@@ -258,6 +259,8 @@ class TestList:
         assert r.failures["v1"][2].name == "int"
         assert r.failures["v2"].name == "empty"
         assert r.failures["v3"][1].name == "c2"
+        assert r.failures["v5"][1].name == "int"
+        assert r.failures["v5"][1].kwargs == dict(base=2)
         assert r.failures["v8"].name == "longer"
         assert r.get().v1 == [1]
         assert r.get().v2 == [2]

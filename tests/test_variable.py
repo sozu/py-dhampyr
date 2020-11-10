@@ -8,8 +8,8 @@ class TestSingle:
         assert x.len._id("abc") == 3
 
     def test_in(self):
-        assert x.in_([1,2,3])._id(1) is True
-        assert x.in_([2,3])._id(1) is False
+        assert x.in_(1,2,3)._id(1) is True
+        assert x.in_(2,3)._id(1) is False
 
     def test_inv(self):
         assert x.inv()._id(False) is True

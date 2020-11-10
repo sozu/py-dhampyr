@@ -31,6 +31,12 @@ class ValidationFailure(Exception):
     def __iter__(self):
         yield ValidationPath([]), self
 
+    def __contains__(self, key):
+        return False
+
+    def __getitem__(self, key):
+        return None
+
     @property
     def name(self):
         return self._name
@@ -94,7 +100,9 @@ class ValidationPath:
         return at(self.path)
 
     def __add__(self, other):
-        if isinstance(other, (str, int)):
+        if other == "" or other is None:
+            return ValidationPath(self.path)
+        elif isinstance(other, (str, int)):
             return ValidationPath(self.path + [other])
         elif isinstance(other, ValidationPath):
             return ValidationPath(self.path + other.path)
@@ -102,7 +110,9 @@ class ValidationPath:
             raise ValueError(f"Unsupported operand type(s) for +: 'ValidationPath' and '{type(other)}'")
 
     def __iadd__(self, other):
-        if isinstance(other, (str, int)):
+        if other == "" or other is None:
+            pass
+        elif isinstance(other, (str, int)):
             self.path.append(other)
         elif isinstance(other, ValidationPath):
             self.path += other.path

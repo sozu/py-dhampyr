@@ -1,6 +1,6 @@
 from enum import Enum
 import inspect
-from functools import partial
+from functools import partial, wraps
 from typing import get_type_hints
 from .config import type_config
 from .validator import Validator, ValidationResult
@@ -40,12 +40,49 @@ def v(conv, *vers, key=None):
     return Validator(c, vs, key=key)
 
 
+class VerifierMethod(Verifier):
+    def __init__(self, name, func, dependencies):
+        super().__init__(name, func, False)
+        self.positive = {k for k, v in dependencies.items() if v is True}
+        self.negative = {k for k, v in dependencies.items() if v is False}
+
+    def __get__(self, instance, owner):
+        if instance is None:
+            return self
+        else:
+            def call(*args, **kwargs):
+                return self.func(instance, *args, **kwargs)
+            return call
+
+    def fulfill_dependencies(self, failures):
+        keys = failures.failures.keys()
+
+        if self.negative & keys:
+            return False
+        elif self.positive and not (self.positive & keys):
+            return True
+        else:
+            return not bool(keys)
+
+
+def validate(__name = None, **dependencies):
+    def decorate(f):
+        return VerifierMethod(__name or f.__name__, f, dependencies)
+    return decorate
+
+
 def parse_validators(cls):
     return {k:v for k, v in cls.__annotations__.items() if isinstance(v, Validator)}
 
 
-def fetch_verifier_methods(cls):
-    return [getattr(cls, k) for k in dir(cls) if not k.startswith("__") and isinstance(getattr(cls, k), Verifier)]
+def fetch_verifier_methods(cls, failures):
+    def to_vm(k):
+        if not k.startswith("__"):
+            value = getattr(cls, k)
+            return value if isinstance(value, VerifierMethod) and value.fulfill_dependencies(failures) else None
+        return None
+
+    return filter(None, [to_vm(k) for k in dir(cls)])
 
 
 def validate_dict(cls, values, context=None, *args, **kwargs):
@@ -53,8 +90,8 @@ def validate_dict(cls, values, context=None, *args, **kwargs):
     Creates an instance of `cls` from dictionary-like object.
 
     Names of attributes declared in `cls` and annotated with `Validator` are used as keys of `values`.
-    Each `Validator` converts and verifies a value obtained from `values` with the key and, if valid, assigns the converted value to craated instance of `cls` as an attribute.
-    In case the validation fails, declared value of the attribute is assigned instead.
+    Each `Validator` validates a value taken from `values` and, if valid, set the result to the attribute of created instance.
+    Attributes where the validation fails are set to a value declared in `cls`.
 
     `values` must be a dictionary-like object whose type fulfills following conditions.
 
@@ -145,11 +182,10 @@ def validate_dict(cls, values, context=None, *args, **kwargs):
                     else:
                         context.remainders[k] = values[k]
 
-        if len(failures) == 0:
-            for m in fetch_verifier_methods(cls):
-                f = m.verify(instance, context)
-                if f is not None:
-                    failures.add(m.name, f)
+        for m in fetch_verifier_methods(cls, failures):
+            f = m.verify(instance, context)
+            if f is not None:
+                failures.add(m.name, f)
 
     return ValidationResult(instance, failures, context)
 
