@@ -386,9 +386,48 @@ Because this feature is added for the purpose of simplicity and intuitivity, it 
 - Logical combinations, which are expressed by operators such as `or`, are not available.
 - When using the same operator multiple times, their parameters in the error object are overwritten by later one's.
 
+### Validation context
+
+`validate_dict` takes `ValidationContext` at the optional third argument. Functionalities of this object are listed below.
+
+- Stores object on its attributes of arbitrary names.
+- Stores key-values pairs in input dictionary to which validation schemes are not applied.
+- Provides an interface to modify configurations which are effective under certain path.
+
+Here describes the overview of `ValidationContext` and the first functionality as others are described in following sections.
+
+`ValidationContext` instance is created at every path where `Validator` works, that is, root, each key of dictionary, each index of iterable value and each nested type. The instances make hierarchical structure providing bracket access like error object. Features of the context are:
+
+- Descendant context is created when it is accessed even before validation.
+- Each context refers parent context and inherits its attributes spontaneously.
+- Settings of a context affect validations only on its path and descendant paths.
+
+```
+c = ValidationContext()
+
+c["a"].put(value = 1)
+c["b"].put(value = 2)
+c["a"][0].put(value = 3)
+
+def lt(x, cxt:ValidationContext):
+    return x > cxt.value
+
+class C:
+    a: v([int], [lt])
+    b: v(int, lt)
+
+r = validate_dict(C, dict(a = ["2", "2"], b = "2"))
+
+assert {str(p) for p, _ in r.failures} == {"a[0]", "b"}
+```
+
+In above code, every value is verified the same function `lt` but the attribute `value` of context is set to different each other on every path. `put` is the method which sets values to attributes, where each pair of keyword arguments corresponds the name and value of an attribute. As a result, `a[0]` compares input value to `3` which is explicitly set to the path whereas `a[1]` uses `1` which is inherited from setting on `a`.
+
+In order to use the context object in `Verifier` function, it should be declared to have an argument which is annotated with `ValidationContext` like `lt`. Context object is given only when the signature satisfies the format, which is the same for `Conterter` function as well. Because the context is created on every path, the argument is always not `None` but the access to unset attribute raises `AttributeError`.
+
 ### Undeclared keys
 
-This library just ignores items in input dictionary whose keys are not declared by any of validatable attribute. Those items remain in the `ValidationContext` which can be accessed via `context` attribute of the result. When the validatable type is nested, `ValidationContext` takes hierarchical form providing key access. Also, when nested type is validated in iterative context, index access is available. Next example shows ways to get undeclared items in various cases.
+`validate_dict` just ignores items in input dictionary whose keys are not declared on the validatable type. Instead, they remain at `remainders` attribute of `ValidationContext`, which can be accessed via `context` attribute of returned value even if you don't give a context explicitly. To get the undeclared values in nested types, use hierarchical access to the context.
 
 ```
 class D:
@@ -411,7 +450,52 @@ assert cxt["c"][1].remainders == dict(e2 = "c")
 
 ### Configurations
 
-## Flask support
+There are some configuration options which control the behavior of validations. Next list shows 3 kinds of configuration styles, where the former one has always higher priority.
+
+- Runtime configurations in `ValidationContext` set by `configure` method.
+    - Similar to context attributes, configurations are inheited as well.
+- Static configurations on the validatable type declared by `dhampyr` decorator.
+    - When nested, the validation of child type is affected by configurations declared on enclosing type.
+- Global default configurations which can be modified by `dhampyr` function.
+
+At runtime, `config` attribute of `ValidationContext` exposes configurations effective on the path.
+
+```
+with dhampyr() as cfg:
+    cfg.name = "global"
+    cfg.join_on_fail = False
+
+def add_name(x, cxt:ValidationContext):
+    return f"x.{cxt.config.name}"
+
+@dhampyr(name="static", join_on_fail=False)
+class D:
+    a: v(add_name)
+
+class C:
+    a: v(add_name)
+    b: v({D})
+    c: v(add_name)
+
+c = ValidationContext()
+c["c"].configure(name="runtime", join_on_fail=False)
+
+d = validate_dict(C, dict(a = "a", b = dict(a = "a"), c = "c"))
+
+assert d.a == "a.global"
+assert d.b.a == "a.static"
+assert d.c == "a.runtime"
+```
+
+Available configuration parameters are listed below:
+
+|key|type|default|target|description|
+|:---|:---|:---|:---|:---|
+||||||
+
+> TODO: Show complete list of configurations.
+
+## Multidict support
 
 This library supports `werkzeug.datastructures.MultiDict` which is used in [Flask](http://flask.pocoo.org/docs/1.0/) to store request forms and queries. In addition to `dict`, the instance of `MultiDict` can be an input of `Validator`.
 
