@@ -5,7 +5,7 @@ from .converter import Converter, ConversionFailure
 from .verifier import Verifier, VerificationFailure
 from .context import ValidationContext
 from .validator import Validator, ValidationResult
-from .api import v, validate_dict, converter, verifier
+from .api import v, validate_dict, converter, verifier, validate
 from .variable import x
 
 __all__ = [
@@ -17,6 +17,7 @@ __all__ = [
     "MissingFailure",
     "v",
     "validate_dict",
+    "validate",
     "converter",
     "verifier",
     "ValidationFailure",

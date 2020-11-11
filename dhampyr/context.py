@@ -97,6 +97,7 @@ class ValidationContext:
                 self.path += key
             return self
         else:
+            print(key)
             return self._contexts.setdefault(key, ValidationContext(
                 self.path + key,
                 parent=self,

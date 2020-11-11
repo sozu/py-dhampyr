@@ -88,7 +88,7 @@ class C:
     a: v([int], [lambda x: x > 0])
     b: v([{D}])
 
-r = validate_dict(C, dict(a = dict(a = [1, 2, 3], b = [dict(a = 4), dict(a = 5), dict(a = 6)])))
+r = validate_dict(C, dict(a = [1, 2, 3], b = [dict(a = 4), dict(a = 5), dict(a = 6)]))
 d = r.get()
 
 assert d.a == [1, 2, 3]
@@ -188,7 +188,7 @@ Although all of those 3 conditions must be satisfied by default, we sometimes ne
 |operator|behavior|
 |:---|:---|
 |`&`|Let validator fail when the next condition is not satisfied.|
-|`|`|Let validator continue to subsequent phases even when the next condition is not satisfied.|
+|`\|`|Let validator continue to subsequent phases even when the next condition is not satisfied.|
 |`^`|Let validator skip subsequent phases without failure when the next condition is not satisfied.|
 
 Conditions for `None` and *empty* are specified with `None` and `...` respectively.
@@ -221,7 +221,7 @@ Validation on `c` fails at verification phase because `|` continues validation s
 Conversion phase is done by a `Conveter` which can be declared by multiple styles. In any style, the input values is treated as an argument.
 
 |specifier|example|name|behavior|
-|:---|:---|:---|:---|:---|
+|:---|:---|:---|:---|
 |function or type|`int`|name of the function or type.|Invoke the function or constructor of the type.|
 |`functools.partial`|`partial(int, base=2)`|name of base function|Invoke the `partial` object.|
 |tuple of `str` and another specifier|`("integer", int)`|first element|Same as the specifier at second element.|
@@ -280,7 +280,7 @@ assert r.get().b == [1, 2, 3]
 Similarly to `Converter`, there also are multiple declaration styles for `Verifier`. 
 
 |specifier|example|name|behavior|
-|:---|:---|:---|:---|:---|
+|:---|:---|:---|:---|
 |function or type|`lt3`|name of the function or type.|Invoke the function or constructor of the type.|
 |`functools.partial`|`partial(lt, threshold = 3)`|name of base function|Invoke the `partial` object.|
 |tuple of `str` and another specifier|`("less_than_3", lt3)`|first element|Same as the specifier at second element.|
@@ -297,6 +297,12 @@ class C:
     b: v(int, p(lt, threshold = 3))
     c: v(int, ("less_than_3", lambda x: x < 3)) = 0
     d: v([int], [lt3], lambda x: len(x) < 5) = []
+
+r = validate_dict(C, dict(a = 3, b = 3, c = 3, d = [1, 1, 1, 1, 1]))
+assert {str(p) for p, _ in r.failures} == {"a", "b", "c", "d"}
+
+r = validate_dict(C, dict(a = 2, b = 2, c = 2, d = [1, 1, 1, 1]))
+assert {str(p) for p, _ in r.failures} == {}
 ```
 
 These styles work similarly to equivalent style of `Converter` specifier. As for list expression in `d`, second `Verifier` is not enclosed by `[]`, so that it takes a list of converted values, not each value in the list. Therefore it fails when the length of the input list is not shorter than `5`.
@@ -358,23 +364,23 @@ Verifiers can be declared by any kind of `callable`s such as normal functions an
 ```
 class C:
     a: v(int, x > 0)
-    b: v(str, x.len_ % 2 == 0)
+    b: v(str, x.len % 2 == 0)
     c: v(int, x.in_(1, 2, 3))
     d: v(int, x.not_.in_(1, 2, 3))
 
 r = validate_dict(C, dict(a = 0, b = "abc", c = 0, d = 1))
 
-assert r.failures["a"].name == "gt"
+assert r.failures["a"].name == "x.gt"
 assert r.failures["a"].kwargs == {"gt.value": 0}
-assert r.failures["b"].name == "len.mod"
+assert r.failures["b"].name == "x.len.mod"
 assert r.failures["b"].kwargs == {"mod.value": 2, "eq.value": 0}
-assert r.failures["c"].name == "in"
+assert r.failures["c"].name == "x.in"
 assert r.failures["c"].kwargs == {"value": (1, 2, 3)}
-assert r.failures["d"].name == "not.in"
+assert r.failures["d"].name == "x.not.in"
 assert r.failures["d"].kwargs == {"value": (1, 2, 3)}
 ```
 
-`len_` is a property which applies `len` to the value, which is introduced because python specification restrict the returning type of `__len__` to `int`. `not_` should be prepended to other operations and it inverts their result.
+`len` is a property which applies `len` to the value, which is introduced because python specification restrict the returning type of `__len__` to `int`. `not_` should be prepended to other operations and it inverts their result.
 
 When the verifier fails, it exposes the error whose name is concatenated operation names and which contains parameters of operations in `kwargs` attribute.
 
@@ -403,11 +409,11 @@ Here describes the overview of `ValidationContext` and the first functionality a
 - Settings of a context affect validations only on its path and descendant paths.
 
 ```
-c = ValidationContext()
+context = ValidationContext()
 
-c["a"].put(value = 1)
-c["b"].put(value = 2)
-c["a"][0].put(value = 3)
+context["a"].put(value = 1)
+context["b"].put(value = 2)
+context["a"][0].put(value = 3)
 
 def lt(x, cxt:ValidationContext):
     return x > cxt.value
@@ -416,7 +422,7 @@ class C:
     a: v([int], [lt])
     b: v(int, lt)
 
-r = validate_dict(C, dict(a = ["2", "2"], b = "2"))
+r = validate_dict(C, dict(a = ["2", "2"], b = "2"), context)
 
 assert {str(p) for p, _ in r.failures} == {"a[0]", "b"}
 ```
@@ -443,7 +449,6 @@ cxt = r.context
 
 assert cxt.remainders == dict(d = "d")
 assert cxt["b"].remainders == dict(e = "a")
-assert cxt["c"].remainders == [dict(e1 = "b"), dict(e2 = "c")]
 assert cxt["c"][0].remainders == dict(e1 = "b")
 assert cxt["c"][1].remainders == dict(e2 = "c")
 ```
@@ -477,10 +482,10 @@ class C:
     b: v({D})
     c: v(add_name)
 
-c = ValidationContext()
-c["c"].configure(name="runtime", join_on_fail=False)
+context = ValidationContext()
+context["c"].configure(name="runtime", join_on_fail=False)
 
-d = validate_dict(C, dict(a = "a", b = dict(a = "a"), c = "c"))
+d = validate_dict(C, dict(a = "a", b = dict(a = "a"), c = "c"), context).get()
 
 assert d.a == "a.global"
 assert d.b.a == "a.static"

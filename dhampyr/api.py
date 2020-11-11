@@ -6,6 +6,7 @@ from .config import type_config
 from .validator import Validator, ValidationResult
 from .converter import Converter, is_builtin
 from .verifier import Verifier
+from .variable import Variable
 from .converter import ValidationContext
 from .failures import ValidationFailure, MalformedFailure, CompositeValidationFailure
 from .requirement import Requirement, VALUE_MISSING
@@ -290,6 +291,8 @@ def verifier(func):
 
     if isinstance(func, Verifier):
         return func
+    elif isinstance(func, Variable):
+        return func._verifier
     elif isinstance(func, partial):
         ff, n, t_in, t_out, args, kwargs = analyze_specifier(func, (), {})
         return Verifier(n, func, is_iter, *args, **kwargs)
