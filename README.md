@@ -384,7 +384,66 @@ assert r.failures["d"].kwargs == {"value": (1, 2, 3)}
 
 When the verifier fails, it exposes the error whose name is concatenated operation names and which contains parameters of operations in `kwargs` attribute.
 
-> TODO: Show the list of all of those names and argument keys somewhere.
+**Comparison operators**
+
+|operator|name|remarks|
+|:---|:---|:---|
+|`<`|`lt`||
+|`<=`|`le`||
+|`==`|`eq`||
+|`!=`|`ne`||
+|`>=`|`ge`||
+|`>`|`gt`||
+
+**Mathematical binary operators**
+
+|operator|name|remarks|
+|:---|:---|:---|
+|`+`|`add`||
+|`-`|`sub`||
+|`*`|`mul`|
+|`@`|`matmal`||
+|`/`|`truediv`||
+|`//`|`floordiv`||
+|`%`|`mod`||
+|`**`|`pow`||
+
+**Mathematical unary operators**
+
+|operator|name|remarks|
+|:---|:---|:---|
+|`-`|`neg`|
+|`+`|`pos`|
+|`~`|`invert`|
+|`<<`|`lshift`||
+|`>>`|`rshift`||
+|`&`|`and`||
+|`^`|`xor`||
+|`\|`|`or`||
+
+**Mathematical functions**
+
+|function|name|remarks|
+|:---|:---|:---|
+|`divmod()`|`divmod`|Builtin function.|
+|`pow()`|`pow`|Builtin function.|
+|`abs()`|`abs`|Builtin function.|
+|`round()`|`round`|Builtin function.|
+|`math.trunc()`|`trunc`|From `math` package.|
+|`math.floor()`|`floor`|From `math` package.|
+|`math.ceil()`|`ceil`|From `math` package.|
+
+**Attributes and methods**
+
+|attribute|name|remarks|
+|:---|:---|:---|
+|`.not_`|`not`|Invert results of subsequent operations.|
+|`.len`|`len`|Length of the input value.|
+|`.inv`|`inv`|Invert result of previous operation.|
+|`.has()`|`has`|Contains argument value or not?|
+|`.in_()`|`in`|Be contained in argument values?|
+|`.x`|`@x`|Return `x` attribute.|
+|`[x]`|`[x]`|Return value on index `x`.|
 
 Because this feature is added for the purpose of simplicity and intuitivity, it has some limitations listed below. Do not use `x` in these situations.
 
@@ -471,7 +530,7 @@ with dhampyr() as cfg:
     cfg.join_on_fail = False
 
 def add_name(x, cxt:ValidationContext):
-    return f"x.{cxt.config.name}"
+    return f"{x}.{cxt.config.name}"
 
 @dhampyr(name="static", join_on_fail=False)
 class D:
@@ -485,20 +544,75 @@ class C:
 context = ValidationContext()
 context["c"].configure(name="runtime", join_on_fail=False)
 
-d = validate_dict(C, dict(a = "a", b = dict(a = "a"), c = "c"), context).get()
+d = validate_dict(C, dict(a = "a", b = dict(a = "b"), c = "c"), context).get()
 
 assert d.a == "a.global"
-assert d.b.a == "a.static"
-assert d.c == "a.runtime"
+assert d.b.a == "b.static"
+assert d.c == "c.runtime"
 ```
 
 Available configuration parameters are listed below:
 
-|key|type|default|target|description|
-|:---|:---|:---|:---|:---|
-||||||
+- `name`
+    - type: `str`
+    - default: `"default"`
+    - description:
+        - The name of this configuration.
+        - This configuration has no effect on validation. Use for debugging purpose etc.
 
-> TODO: Show complete list of configurations.
+- `skip_null` / `skip_empty`
+    - type: `bool`
+    - default: `True`
+    - phase: Requirement
+    - description:
+        - Determines whether `v` validator (no `+`) skips subsequent phases when the input value is `None` or *empty value*.
+
+- `allow_null` / `allow_empty`
+    - type: `bool`
+    - default: `False`
+    - phase: Requirement
+    - description:
+        - Determines whether `+v` validator skips subsequent phases when the input value is `None` or *empty value*.
+
+- `empty_specs`
+    - type: `[(type[T], (T) -> bool)]`
+    - default: `[]`
+    - phase: Requirement
+    - description:
+        - List of pairs composed of a type and a function, where the function takes a value of the type and returns whether it is *empty* or not.
+        - The function is invoked when the input value is an instance of the paired type.
+
+- `isinstance_builtin` / `isinstance_any`
+    - type: `bool`
+    - default: `False`
+    - phase: Conversion
+    - description:
+        - This configuration has effect on `Converter`s declared by type constructor (`int`, `float` etc).
+        - If `True`, `Converter` checks the type of input value and returns it as it is if it is an instance of the type, otherwise fails.
+        - `_builtin` works only for builtin types, whereas `_any` works for any type.
+
+- `join_on_fail`
+    - type: `bool`
+    - default: `True`
+    - phase: Conversion, Verification
+    - description:
+        - Determines what is assigned to the iterable attribute when the validation on it fails.
+        - If `True`, `None` is assigned even when validations to some items succeeds.
+        - Otherwise, a list is assigned which contains successfully validated values and `None`s on failed index.
+
+- `ignore_remainders`
+    - type: `bool`
+    - default: `False`
+    - description:
+        - Determines whether undeclared keys are simply ignored and discarded.
+        - If `True`, `remainders` attribute is always empty dictionary.
+
+- `share_context`
+    - type: `bool`
+    - default: `False`
+    - description:
+        - If `True`, validation context is never created newly, that is, an instance is shared at every path.
+        - Also, `remainders` takes hierarchical form equivalent to the structure of nested validatable types.
 
 ## Multidict support
 
