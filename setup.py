@@ -5,7 +5,7 @@ with open("README.md", "r") as f:
 
 setup(
     name = "dhampyr",
-    version = "0.2.2.0",
+    version = "1.0-a1",
     author = "sozuberry",
     author_email = "sozuberry@gmail.com",
     description = "Python simple validator for dict-like objects",

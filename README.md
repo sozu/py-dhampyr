@@ -277,7 +277,7 @@ assert r.get().b == [1, 2, 3]
 
 ### Verification phase
 
-Similarly to `Converter`, there also are multiple declaration styles for `Verifier`. 
+Similar to `Converter`, there also are multiple declaration styles for `Verifier`. 
 
 |specifier|example|name|behavior|
 |:---|:---|:---|:---|
@@ -349,7 +349,7 @@ assert r.failures["v3"].name == "v3"
 
 Above code shows examples of verifier methods with various dependencies.
 
-`v1` has no dependencies so that it is executed only when validations of all attribute succeeded. `v2` is executed in any case because validation results on `b` and `c` have no concern. As for `v3` which has negative dependency on `b`, it is not executed in second case where the validation on `b` fails.
+`v1` has no dependencies so that it is executed only when validations of all attribute succeeded. `v2` is executed in every case because validation results on `b` and `c` have no concern. As for `v3` which has negative dependency on `b`, it is not executed in second case where the validation on `b` fails.
 
 As shown in the code, an error caused by a verifier method is stored on the path of its name, and `name` of the error is also its name.
 
@@ -380,7 +380,7 @@ assert r.failures["d"].name == "x.not.in"
 assert r.failures["d"].kwargs == {"value": (1, 2, 3)}
 ```
 
-`len` is a property which applies `len` to the value, which is introduced because python specification restrict the returning type of `__len__` to `int`. `not_` should be prepended to other operations and it inverts their result.
+`len` is a property which applies builtin `len` function to the value, which is introduced because python specification restricts that `__len__` returns a value of `int`. `not_` should be prepended to other operations and it inverts their result.
 
 When the verifier fails, it exposes the error whose name is concatenated operation names and which contains parameters of operations in `kwargs` attribute.
 
@@ -456,7 +456,7 @@ Because this feature is added for the purpose of simplicity and intuitivity, it 
 `validate_dict` takes `ValidationContext` at the optional third argument. Functionalities of this object are listed below.
 
 - Stores object on its attributes of arbitrary names.
-- Stores key-values pairs in input dictionary to which validation schemes are not applied.
+- Stores key-value pairs in input dictionary to which validation schemes are not applied.
 - Provides an interface to modify configurations which are effective under certain path.
 
 Here describes the overview of `ValidationContext` and the first functionality as others are described in following sections.
