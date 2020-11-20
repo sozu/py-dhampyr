@@ -313,7 +313,7 @@ def analyze_specifier(f, args, kwargs):
     ----------
     f: type | partial | callable
         Specifier.
-    args: [object]
+    args: (object)
         Accumulated indexed arguments.
     kwargs: {str:object}
         Accumulated keyword arguments.
@@ -338,11 +338,14 @@ def analyze_specifier(f, args, kwargs):
     elif isinstance(f, type):
         # check the second argument of constructor.
         params = _args_remains(f.__init__, args, kwargs)
-        if len(params) == 2:
+        if params is None:
+            # No signature is found. use as it is.
+            return f, f.__name__, None, f, args, kwargs
+        elif len(params) == 2:
             t_in = get_type_hints(f.__init__).get(params[1].name, None)
             return f, f.__name__, t_in, f, args, kwargs
         else:
-            raise TypeError(f"Constructor of {f} has multiple unassigned arguments.")
+            raise TypeError(f"Constructor of {f} must have an unassigned arguments.")
     elif isinstance(f, partial):
         # check the first argument of original function that is not assigned value.
         p_args = f.args
@@ -357,18 +360,24 @@ def analyze_specifier(f, args, kwargs):
     elif callable(f):
         # check the first argument.
         params = _args_remains(f, args, kwargs)
-        if len(params) == 1:
+        if params is None:
+            # No signature is found. use as it is.
+            return f, f.__name__, None, None, args, kwargs
+        elif len(params) == 1:
             hints = get_type_hints(f)
             return f, f.__name__, hints.get(params[0].name, None), hints.get('return', None), args, kwargs
         else:
-            raise TypeError(f"Function {f} has multiple unassigned arguments.")
+            raise TypeError(f"Function {f} must have an unassigned arguments.")
     else:
         # unknown.
-        return None
+        raise TypeError(f"{f} is not available for the specifier of Converter or Verifier.")
 
 
 def _args_remains(f, args, kwargs):
-    params = list(inspect.signature(f).parameters.items())[len(args):]
+    try:
+        params = list(inspect.signature(f).parameters.items())[len(args):]
+    except Exception:
+        return None
     params = [p for n, p in params if n not in kwargs and p.annotation != ValidationContext]
     no_defaults = [p for p in params if p.default is inspect.Parameter.empty]
     return params

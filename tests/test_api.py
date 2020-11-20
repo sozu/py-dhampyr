@@ -1,9 +1,10 @@
 import pytest
 from enum import Enum
 from functools import partial
+from datetime import datetime, date, timezone
 from dhampyr.failures import ValidationFailure, CompositeValidationFailure
 from dhampyr.context import ValidationContext
-from dhampyr.api import v, converter, verifier
+from dhampyr.api import v, converter, verifier, analyze_specifier
 
 
 class TestConverter:
@@ -220,3 +221,159 @@ class TestVerifier:
         assert f is None
         f = vf.verify(3)
         assert f is not None
+
+
+class TestAnalyzeSpecifier:
+    def test_builtin_type(self):
+        f, n, it, ot, args, kwargs = analyze_specifier(int, (), {})
+
+        assert f is int
+        assert n == "int"
+        assert it is int
+        assert ot is int
+        assert args == ()
+        assert kwargs == {}
+
+    def test_user_type(self):
+        class C:
+            def __init__(self, v):
+                self.v = v
+        f, n, it, ot, args, kwargs = analyze_specifier(C, (), {})
+
+        assert f is C
+        assert n == "C"
+        assert it is None
+        assert ot is C
+        assert args == ()
+        assert kwargs == {}
+
+    def test_user_type_sig(self):
+        class C:
+            def __init__(self, v:str):
+                self.v = v
+        f, n, it, ot, args, kwargs = analyze_specifier(C, (), {})
+
+        assert f is C
+        assert n == "C"
+        assert it is str
+        assert ot is C
+        assert args == ()
+        assert kwargs == {}
+
+    def test_builtin_method(self):
+        f, n, it, ot, args, kwargs = analyze_specifier(date.fromisoformat, (), {})
+
+        assert f == date.fromisoformat
+        assert n == "fromisoformat"
+        assert it is None
+        assert ot is None
+        assert args == ()
+        assert kwargs == {}
+
+    def test_builtin_callable(self):
+        f, n, it, ot, args, kwargs = analyze_specifier(abs, (), {})
+
+        assert f is abs
+        assert n == "abs"
+        assert it is None
+        assert ot is None
+        assert args == ()
+        assert kwargs == {}
+
+    def test_user_callable(self):
+        def func(v):
+            return int(v)
+        f, n, it, ot, args, kwargs = analyze_specifier(func, (), {})
+
+        assert f is func
+        assert n == "func"
+        assert it is None
+        assert ot is None
+        assert args == ()
+        assert kwargs == {}
+
+    def test_user_callable_sig(self):
+        def func(v:str) -> int:
+            return int(v)
+        f, n, it, ot, args, kwargs = analyze_specifier(func, (), {})
+
+        assert f is func
+        assert n == "func"
+        assert it is str
+        assert ot is int
+        assert args == ()
+        assert kwargs == {}
+
+    def test_partial_builtin_type(self):
+        func = partial(int, base=2)
+        f, n, it, ot, args, kwargs = analyze_specifier(func, (), {})
+
+        assert f is func
+        assert n == "int"
+        assert it is int
+        assert ot is int
+        assert args == ()
+        assert kwargs == {"base": 2}
+
+    def test_partial_builtin_method(self):
+        func = partial(datetime.fromtimestamp, tz=timezone.utc)
+        f, n, it, ot, args, kwargs = analyze_specifier(func, (), {})
+
+        assert f is func
+        assert n == "fromtimestamp"
+        assert it is None
+        assert ot is None
+        assert args == ()
+        assert kwargs == {"tz": timezone.utc}
+
+    def test_partial_builtin_callable(self):
+        func = partial(min, 1)
+        f, n, it, ot, args, kwargs = analyze_specifier(func, (), {})
+
+        assert f is func
+        assert n == "min"
+        assert it is None
+        assert ot is None
+        assert args == (1,)
+        assert kwargs == {}
+
+    def test_partial_user_type(self):
+        class C:
+            def __init__(self, v:str, w:int):
+                self.v = v
+                self.w = w
+        func = partial(C, v="a")
+        f, n, it, ot, args, kwargs = analyze_specifier(func, (), {})
+
+        assert f is func
+        assert n == "C"
+        assert it is int
+        assert ot is C
+        assert args == ()
+        assert kwargs == {"v": "a"}
+
+    def test_partial_user_callable(self):
+        def inner(v, w):
+            return 0
+        func = partial(inner, v="a")
+        f, n, it, ot, args, kwargs = analyze_specifier(func, (), {})
+
+        assert f is func
+        assert n == "inner"
+        assert it is None
+        assert ot is None
+        assert args == ()
+        assert kwargs == {"v": "a"}
+
+    def test_partial_user_callable_sig(self):
+        def inner(v:str, w:int) -> float:
+            return 0
+        func = partial(inner, v="a")
+        f, n, it, ot, args, kwargs = analyze_specifier(func, (), {})
+
+        assert f is func
+        assert n == "inner"
+        assert it is int
+        assert ot is float
+        assert args == ()
+        assert kwargs == {"v": "a"}
