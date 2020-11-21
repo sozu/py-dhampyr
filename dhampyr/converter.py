@@ -1,3 +1,4 @@
+import builtins
 from .context import ValidationContext, contextual_invoke
 from .failures import ValidationFailure, CompositeValidationFailure, PartialFailure
 
@@ -16,12 +17,17 @@ class ConversionFailure(ValidationFailure):
         self.converter = converter
 
 
+def is_builtin(t):
+    return isinstance(t, type) and hasattr(builtins, t.__qualname__)
+
+
 class Converter:
-    def __init__(self, name, func, is_iter, inferred=None, *args, **kwargs):
+    def __init__(self, name, func, is_iter, accepts=None, returns=None, *args, **kwargs):
         self.name = name
         self.func = func
         self.is_iter = is_iter
-        self.inferred = inferred
+        self.accepts = accepts
+        self.returns = returns
         self.args = args
         self.kwargs = kwargs
 
@@ -44,11 +50,19 @@ class Converter:
             A failure in conversion or `None` when it succeeded.
         """
         def conv(v, i=None):
+            if context:
+                if context.config.isinstance_any:
+                    return (v, None) if isinstance(v, self.func) else (None, ConversionFailure("Type unmatched.", self))
+                elif context.config.isinstance_builtin:
+                    if is_builtin(self.func):
+                        return (v, None) if isinstance(v, self.func) else (None, ConversionFailure("Type unmatched.", self))
+
             try:
-                c = context
-                if c and i is not None:
-                    c = c[i]
-                return contextual_invoke(self.func, v, c), None
+                if context and i is not None:
+                    with context[i, True] as c:
+                        return contextual_invoke(self.func, v, c), None
+                else:
+                    return contextual_invoke(self.func, v, context), None
             except PartialFailure as e:
                 return None, e.create(converter=self)
             except ValidationFailure as e:
@@ -65,7 +79,7 @@ class Converter:
                 composite = CompositeValidationFailure()
                 for i, f in failures:
                     composite.add(i, f)
-                if context and not context.joint_failure:
+                if context and not context.config.join_on_fail:
                     return [None if f else v for v, f in results], composite
                 else:
                     return None, composite
