@@ -67,3 +67,25 @@ class TestDhampyr:
         assert r.get().v1 == 0
         assert r.failures['v2'] is not None
         assert r.get().v2 == [None, 1, None]
+
+
+class TestKeyFilter:
+    def test_key_filter(self):
+        class U:
+            u1: +v(int)
+
+        @dhampyr(key_filter=lambda k: f"{k}1")
+        class V:
+            v1: +v(int)
+            v2: +v(str)
+            v3: +v({U})
+
+        r = validate_dict(V, dict(v11 = 1, v21 = 2, v1 = 3, v2 = 4, v31 = dict(u11 = 5, u1 = 6)))
+        assert r
+
+        d = r.get()
+        assert d.v1 == 1
+        assert d.v2 == "2"
+        assert d.v3.u1 == 5
+        assert r.context.remainders == dict(v1 = 3, v2 = 4)
+        assert r.context["v3"].remainders == dict(u1 = 6)

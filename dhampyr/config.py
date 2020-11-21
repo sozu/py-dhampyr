@@ -7,6 +7,8 @@ class ValidationConfiguration:
 
     Attributes
     ----------
+    key_filter: str -> str
+        A function which maps attribute names in validatable type to keys of input dictionary.
     skip_null: bool
         If true, validator not prepended by `+` skips when the input is `None`.
     skip_empty: bool
@@ -31,6 +33,7 @@ class ValidationConfiguration:
     def __init__(
         self,
         name = None,
+        key_filter = None,
         skip_null = None,
         skip_empty = None,
         allow_null = None,
@@ -43,6 +46,7 @@ class ValidationConfiguration:
         share_context = None,
     ):
         self.name = name
+        self.key_filter = key_filter
         self.skip_null = skip_null
         self.skip_empty = skip_empty
         self.allow_null = allow_null
@@ -120,6 +124,7 @@ class ConfigurationStack:
 
 def default_config(config=ValidationConfiguration(
     name = "default",
+    key_filter = None,
     skip_null = True,
     skip_empty = True,
     allow_null = False,

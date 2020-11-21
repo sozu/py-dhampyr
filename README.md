@@ -6,7 +6,7 @@ This library provides data validation functionalities designed for HTTP applicat
 
 - Validation schemes are declared in annotation context which is introduced in python 3.5.
 - Each validation scheme can be composed of simple functions including lambda expressions.
-- Errors in validations are represented with informative objects, not with just an error message.
+- Errors in validations are represented with informative objects, not with just error messages.
 
 ## Installation
 
@@ -559,6 +559,13 @@ Available configuration parameters are listed below:
     - description:
         - The name of this configuration.
         - This configuration has no effect on validation. Use for debugging purpose etc.
+
+- `key_filter`
+    - type: `str -> str`
+    - default: `None`
+    - description:
+        - A function which maps attribute names in validatable type to keys of input dictionary.
+        - The function is applied even when the key is specified explicitly by `key` argument of `v`.
 
 - `skip_null` / `skip_empty`
     - type: `bool`

@@ -155,8 +155,10 @@ def validate_dict(cls, values, context=None, *args, **kwargs):
 
         validated_keys = set()
 
+        key_filter = context.config.key_filter or (lambda x: x)
+
         for k, v in validators.items():
-            key = v.key or k
+            key = key_filter(v.key or k)
 
             validated_keys.add(key)
 
