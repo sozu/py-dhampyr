@@ -5,16 +5,16 @@ from dhampyr.failures import ValidationFailure, CompositeValidationFailure
 from dhampyr.requirement import Requirement, RequirementPolicy, VALUE_MISSING, MissingFailure, NullFailure, EmptyFailure
 from dhampyr.config import default_config
 from dhampyr.context import ValidationContext
-from dhampyr.converter import Converter, ConversionFailure
+from dhampyr.converter import Converter, ConversionFailure, ConverterFactory
 from dhampyr.verifier import Verifier, VerificationFailure
-from dhampyr.validator import Validator
+from dhampyr.validator import Validator, ValidatorFactory
 
 
 class TestPositive:
     def test_ignore_null(self):
         config = default_config().derive()
         config.allow_empty = True
-        v = +Validator(Converter("conv", lambda x:x, False), [], config)
+        v = +Validator(Converter("conv", lambda x:x, False), [])
         assert v.requirement.missing == RequirementPolicy.FAIL
         assert v.requirement.null == RequirementPolicy.REQUIRES
         assert v.requirement.empty == RequirementPolicy.REQUIRES
@@ -22,7 +22,7 @@ class TestPositive:
     def test_ignore_empty(self):
         config = default_config().derive()
         config.allow_empty = True
-        v = +Validator(Converter("conv", lambda x:x, False), [], config)
+        v = +Validator(Converter("conv", lambda x:x, False), [])
         assert v.requirement.missing == RequirementPolicy.FAIL
         assert v.requirement.null == RequirementPolicy.REQUIRES
         assert v.requirement.empty == RequirementPolicy.REQUIRES
@@ -68,7 +68,7 @@ class TestRequirement:
         assert b
 
     def test_null_continue(self):
-        v = self._validator() | None
+        v = self._validator() / None
         r, f, b = v.validate(None)
         assert not v.requires
         assert r is None
@@ -92,7 +92,7 @@ class TestRequirement:
         assert b
 
     def test_empty_continue(self):
-        v = self._validator() | ...
+        v = self._validator() / ...
         r, f, b = v.validate("")
         assert not v.requires
         assert r == ""
@@ -235,3 +235,72 @@ class TestIterativeVerify:
         assert r == [1, None, 3]
         assert f[1].name == "lt"
         assert not b
+
+
+class TestFactory:
+    def _factory(self):
+        return ValidatorFactory(ConverterFactory("test", False, False, lambda cxt: lambda x: 0, False), [],)
+
+    def test_factory(self):
+        f = self._factory()
+        v = f.create(ValidationContext())
+        assert v.requires is False
+        assert (v.requirement.missing, v.requirement.null, v.requirement.empty) \
+            == (RequirementPolicy.SKIP, RequirementPolicy.CONTEXTUAL, RequirementPolicy.CONTEXTUAL)
+        assert v.accept_list is False
+
+    def test_pos(self):
+        f = +self._factory()
+        v = f.create(ValidationContext())
+        assert v.requires is True
+        assert (v.requirement.missing, v.requirement.null, v.requirement.empty) \
+            == (RequirementPolicy.FAIL, RequirementPolicy.REQUIRES, RequirementPolicy.REQUIRES)
+        assert v.accept_list is False
+
+    def test_and_none(self):
+        f = self._factory() & None
+        v = f.create(ValidationContext())
+        assert v.requires is True
+        assert (v.requirement.missing, v.requirement.null, v.requirement.empty) \
+            == (RequirementPolicy.SKIP, RequirementPolicy.FAIL, RequirementPolicy.CONTEXTUAL)
+        assert v.accept_list is False
+
+    def test_truediv_none(self):
+        f = self._factory() / None
+        v = f.create(ValidationContext())
+        assert v.requires is False
+        assert (v.requirement.missing, v.requirement.null, v.requirement.empty) \
+            == (RequirementPolicy.SKIP, RequirementPolicy.CONTINUE, RequirementPolicy.CONTEXTUAL)
+        assert v.accept_list is False
+
+    def test_xor_none(self):
+        f = self._factory() ^ None
+        v = f.create(ValidationContext())
+        assert v.requires is False
+        assert (v.requirement.missing, v.requirement.null, v.requirement.empty) \
+            == (RequirementPolicy.SKIP, RequirementPolicy.SKIP, RequirementPolicy.CONTEXTUAL)
+        assert v.accept_list is False
+
+    def test_and_ellipsis(self):
+        f = self._factory() & ...
+        v = f.create(ValidationContext())
+        assert v.requires is True
+        assert (v.requirement.missing, v.requirement.null, v.requirement.empty) \
+            == (RequirementPolicy.SKIP, RequirementPolicy.CONTEXTUAL, RequirementPolicy.FAIL)
+        assert v.accept_list is False
+
+    def test_truediv_ellipsis(self):
+        f = self._factory() / ...
+        v = f.create(ValidationContext())
+        assert v.requires is False
+        assert (v.requirement.missing, v.requirement.null, v.requirement.empty) \
+            == (RequirementPolicy.SKIP, RequirementPolicy.CONTEXTUAL, RequirementPolicy.CONTINUE)
+        assert v.accept_list is False
+
+    def test_xor_ellipsis(self):
+        f = self._factory() ^ ...
+        v = f.create(ValidationContext())
+        assert v.requires is False
+        assert (v.requirement.missing, v.requirement.null, v.requirement.empty) \
+            == (RequirementPolicy.SKIP, RequirementPolicy.CONTEXTUAL, RequirementPolicy.SKIP)
+        assert v.accept_list is False

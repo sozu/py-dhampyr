@@ -1,18 +1,18 @@
 import pytest
 from enum import Enum, auto
 from functools import partial as p
-from dhampyr.api import v, parse_validators, validate_dict
+from typing import Annotated, Optional
+from dhampyr.api import v, parse_validators, validate_dict, validatable
 from dhampyr.context import ValidationContext
-from dhampyr.config import dhampyr
 
 
 class TestParse:
     class Requirement:
         v1 = None
         v2: int
-        v3: v(int)
-        v4: +v(int)
-        v5: v(int) & None | ... = 5
+        v3: int = v(int)
+        v4: int = +v(int)
+        v5 = v(int, default=5) / ... & None
 
     def test_parse(self):
         vs = parse_validators(TestParse.Requirement)
@@ -22,21 +22,23 @@ class TestParse:
 class TestMalformed:
     def test_malformed(self):
         class C:
-            v1: v(int)
+            v1 = v(int)
         r = validate_dict(C, [])
         assert [(str(p), f.name) for p, f in r.failures] == [("", "malformed")]
 
 
 class TestKey:
     def test_success(self):
+        @validatable()
         class C:
-            v1: v(int, key="value-1")
+            v1: int = v(alias="value-1")
         r = validate_dict(C, {"value-1": "3"})
         assert r.get().v1 == 3
 
     def test_failure(self):
+        @validatable()
         class C:
-            v1: v(int, key="value-1")
+            v1: int = v(alias="value-1")
         r = validate_dict(C, {"value-1": "a"})
         assert r.failures['v1'] is not None
         assert [(str(p), f.name) for p,f in r.failures] == [("v1", "int")]
@@ -69,29 +71,29 @@ class TestFlat:
     def _validate(self, values, share=False):
         class V:
             # don't fail
-            v1: v(str) = "v1"
+            v1: Annotated[str, v()] = "v1"
             # required
-            v2: +v(str) = "v2"
+            v2: Annotated[str, +v()] = "v2"
             # converter
-            v3: v(int) = 3
+            v3: Annotated[int, v()] = 3
             # converter without default
-            v4: v(int)
+            v4: Annotated[int, v()]
             # named converter
-            v5: v(("c5", int)) = 5
+            v5: Annotated[int, v(("c5", int))] = 5
             # Enum
-            v6: v(E) = E.E2
+            v6: Annotated[E, v()] = E.E2
             # converter with partial
-            v7: v(p(int, base=2)) = 7
+            v7: Annotated[int, v(p(int, base=2))] = 7
             # verifier
-            v8: v(int, gt0) = 8
+            v8: Annotated[int, v(..., gt0)] = 8
             # verifier without default
-            v9: v(int, gt0)
+            v9: Annotated[int, v(..., gt0)]
             # multiple verifiers
-            v10: v(int, gt0, lt) = 10
+            v10: Annotated[int, v(..., gt0, lt)] = 10
             # named verifier
-            v11: v(int, ("v13", gt0)) = 11
+            v11: Annotated[int, v(..., ("v13", gt0))] = 11
             # verifier with partial
-            v12: v(int, p(gt, th=0)) = 12
+            v12: Annotated[int, v(..., p(gt, th=0))] = 12
 
         return validate_dict(V, values, ValidationContext().configure(share_context=share))
 
@@ -182,14 +184,14 @@ class TestFlat:
 class TestList:
     def _validate(self, values, share):
         class V:
-            v1: v([int]) = [1]
-            v2: +v([int]) = [2]
-            v3: v([("c2", int)]) = [3]
-            v4: v([E]) = [E.E5]
-            v5: v([p(int, base=2)]) = [5]
-            v6: v([int], [gt0]) = [6]
-            v7: v([int], [gt0], [lt]) = [7]
-            v8: v([int], [gt0], longer) = [8]
+            v1: list[int] = v(..., default_factory=lambda: [1])
+            v2: list[int] = +v(..., default_factory=lambda: [2])
+            v3: list[int] = v([("c2", int)], default_factory=lambda: [3])
+            v4: list[E] = v(..., default_factory=lambda: [E.E5])
+            v5: list[int] = v([p(int, base=2)], default_factory=lambda: [5])
+            v6: list[int] = v(..., [gt0], default_factory=lambda: [6])
+            v7: list[int] = v(..., [gt0], [lt], default_factory=lambda: [7])
+            v8: list[int] = v(..., [gt0], longer, default_factory=lambda: [8])
 
         return validate_dict(V, values, ValidationContext().configure(share_context=share))
 
@@ -280,12 +282,12 @@ class TestNest:
             c2: +v(int, gt0) = 2
 
         class P:
-            p1: +v({C}) = None
-            p2: +v([{C}]) = []
+            p1: +v(C) = None
+            p2: +v([C]) = []
 
         class V:
-            v1: +v({P}) = None
-            v2: +v([{P}]) = []
+            v1: +v(P) = None
+            v2: +v([P]) = []
 
         context = (context or ValidationContext()).configure(share_context=share)
 
@@ -435,12 +437,12 @@ class TestRemainders:
             c2: +v(int) = 2
 
         class P:
-            p1: +v({C}) = None
-            p2: +v([{C}]) = []
+            p1: +v(C) = None
+            p2: +v([C]) = []
 
         class V:
-            v1: +v({P}) = None
-            v2: +v([{P}]) = []
+            v1: +v(P) = None
+            v2: +v([P]) = []
 
         context = (context or ValidationContext()).configure(share_context=share)
 
@@ -538,19 +540,19 @@ class TestRemainders:
 
 class TestTypeConfiguration:
     def _validate(self, values, context=None):
-        @dhampyr(ignore_remainders=True)
+        @validatable(ignore_remainders=True)
         class Q:
-            q1: +v(int)
-            q2: +v(int)
+            q1: int = +v()
+            q2: int = +v()
 
-        @dhampyr(isinstance_builtin=True)
+        @validatable(isinstance_builtin=True)
         class P:
-            p1: +v({Q}) = None
-            p2: +v({Q}) = None
+            p1: Optional[Q] = +v(Q, default=None)
+            p2: Optional[Q] = +v(Q, default=None)
 
         class V:
-            v1: +v({P}) = None
-            v2: +v({Q}) = None
+            v1: P = +v(P)
+            v2: Q = +v(Q)
 
         return validate_dict(V, values, context=context)
 

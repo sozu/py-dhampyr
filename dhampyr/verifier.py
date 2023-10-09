@@ -1,5 +1,10 @@
-from .context import ValidationContext, contextual_invoke
+from collections.abc import Callable
+from typing import Any, TypeVar, Generic, Optional
+from .context import ValidationContext, ContextualCallable, analyze_callable
 from .failures import ValidationFailure, CompositeValidationFailure, PartialFailure
+
+
+V = TypeVar('V')
 
 
 class VerificationFailure(ValidationFailure):
@@ -16,37 +21,49 @@ class VerificationFailure(ValidationFailure):
         self.verifier = verifier
 
 
-class Verifier:
-    def __init__(self, name, func, is_iter, message=None, *args, **kwargs):
+class Verifier(Generic[V]):
+    """
+    This class provides the interface to verify if the value satisfies some conditions.
+
+    `func` is the function to verify the value which should work as follows.
+
+    - Takes at least an argument where the value will be passed.
+    - Optional one more argument for `ValidationContext` is available, which should be annotated the type.
+    - `args` and `kwargs` are also passed to the function.
+    - Returns `True` when the verification succeeds.
+    - Otherwise, returns `False` or throw `Exception` .
+    """
+    def __init__(self, name: str, func: Callable, is_iter: bool, message: Optional[str] = None, *args, **kwargs):
+        #: The name of the verifier used for error message.
         self.name = name
+        #: Function verifying a value.
         self.func = func
+        #: Flag to interpret input value as iterable object and verify each value respectively.
         self.is_iter = is_iter
+        #: Default error message.
+        self.message = message
         self.args = args
         self.kwargs = kwargs
 
-    def verify(self, value, context=None):
+    def verify(self, value: Any, context: Optional[ValidationContext] = None) -> Optional[ValidationFailure]:
         """
         Verifies a value with verification function.
 
-        Parameters
-        ----------
-        value: object
-            A value to verify.
-        context: ValidationContext
-            Context for the value.
-
-        Returns
-        -------
-        ValidationFailure
+        Args:
+            value: A value to verify.
+            context: Context for the value.
+        Returns:
             A failure which arised in the verification. When it succeeded, `None`.
         """
         def ver(v, i=None):
             try:
+                cc = self.func if isinstance(self.func, ContextualCallable) else analyze_callable(self.func)
                 if context and i is not None:
                     with context[i, True] as c:
-                        r = contextual_invoke(self.func, v, c)
+                        r = cc(v, c)
                 else:
-                    r = contextual_invoke(self.func, v, context)
+                    # REVIEW: How to generate empty context?
+                    r = cc(v, context or ValidationContext())
                 return None if r else VerificationFailure(f"Verification by {self.name} failed.", self)
             except PartialFailure as e:
                 return e.create(verifier=self)

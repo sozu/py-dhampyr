@@ -1,4 +1,5 @@
 import math
+from typing import Any, Optional
 from .context import ValidationContext
 from .verifier import Verifier
 
@@ -81,11 +82,11 @@ class Variable:
             names[1:1] = ['not']
         return Verifier('.'.join(names), func, False, **self._kwargs)
 
-    def __call__(self, x, context:ValidationContext=None):
+    def __call__(self, x, context: Optional[ValidationContext] = None):
         b = bool(self._id(x)) 
         return not b if self._not else b
 
-    def __getattr__(self, key):
+    def __getattr__(self, key) -> Any:
         if key == '__name__':
             return '.'.join(self._names)
         elif key == '__annotations__':

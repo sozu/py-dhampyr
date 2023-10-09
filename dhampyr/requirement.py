@@ -1,6 +1,12 @@
-from enum import Enum, auto
+from collections.abc import Callable
+from enum import Enum
+from typing import Any, Optional
+from typing_extensions import TypeAlias
 from .failures import ValidationFailure
 from .context import ValidationContext
+
+
+Policy: TypeAlias = Callable[[Callable[[], ValidationFailure], bool, bool], tuple[Optional[ValidationFailure], bool]]
 
 
 def _fails(error, skip, allow):
@@ -20,6 +26,9 @@ def _requires(error, skip, allow):
 
 
 class RequirementPolicy(Enum):
+    """
+    Set of requirement policies.
+    """
     FAIL = _fails
     SKIP = _skips
     CONTINUE = _continue
@@ -34,18 +43,19 @@ class Requirement:
     """
     Represents the method which requires a value from dictionary-like object.
     """
-    def __init__(self, missing=RequirementPolicy.SKIP, null=RequirementPolicy.SKIP, empty=RequirementPolicy.SKIP):
+    def __init__(
+        self,
+        missing: Policy = RequirementPolicy.SKIP,
+        null: Policy = RequirementPolicy.SKIP,
+        empty: Policy = RequirementPolicy.SKIP,
+    ) -> None:
         """
         Initializes the object with requirement policies.
 
-        Parameters
-        ----------
-        missing: RequirementPolicy
-            A policy applied when the value is absent.
-        null: RequirementPolicy
-            A policy applied when the value is `None`.
-        empty: RequirementPolicy
-            A policy applied when the value is empty.
+        Args:
+            missing: A policy applied when the value is absent.
+            null: A policy applied when the value is `None`.
+            empty: A policy applied when the value is empty.
         """
         self.missing = missing
         self.null = null
@@ -53,14 +63,9 @@ class Requirement:
         self._requires = False
 
     @property
-    def requires(self):
+    def requires(self) -> bool:
         """
-        Checks one of the policies is `FAIL`.
-
-        Returns
-        -------
-        bool
-            `True` when one of policies is `FAIL`.
+        Checks one of policies is `FAIL`, that is, requires value exist.
         """
         return any(map(lambda r: r == RequirementPolicy.FAIL, (self.missing, self.null, self.empty)))
 
@@ -73,21 +78,14 @@ class Requirement:
 
         return False
 
-    def validate(self, value, context=None):
+    def validate(self, value: Any, context: Optional[ValidationContext] = None) -> tuple[Optional[ValidationFailure], bool]:
         """
         Apply requirement policies to a value.
 
-        Parameters
-        ----------
-        value: object
-            A value to validate
-
-        Returns
-        -------
-        ValidationFailure
-            A failure returned from requirement policy or continuation function.
-        bool
-            The flag notifying the caller to continue to subsequent phases.
+        Args:
+            value: A value to validate
+        Returns:
+            First value is the failure caused by policy. Next boolean is the flag to continue subsequent validation phases.
         """
         context = context or ValidationContext.default()
 

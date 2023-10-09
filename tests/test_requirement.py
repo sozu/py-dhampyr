@@ -26,6 +26,7 @@ class TestMissing:
     def test_requires(self):
         r = Requirement(RequirementPolicy.REQUIRES)
         f, b = r.validate(VALUE_MISSING)
+        assert isinstance(f, MissingFailure)
         assert f.name == "missing"
         assert not b
 

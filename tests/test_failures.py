@@ -28,18 +28,18 @@ class TestCompositeValidationFailure:
         f.failures['a'] = a
         f.failures['b'] = b
 
-        assert f['a'][0]['A'].name == "a0A"
-        assert f['a'][1]['A'].name == "a1A"
-        assert f['b']['c'].name == "bc"
-        assert f['b']['d'].name == "bd"
+        assert f['a'][0]['A'].name == "a0A" # type: ignore
+        assert f['a'][1]['A'].name == "a1A" # type: ignore
+        assert f['b']['c'].name == "bc" # type: ignore
+        assert f['b']['d'].name == "bd" # type: ignore
         assert f['c'] is None
         with pytest.raises(TypeError):
-            f['c'][0]
+            f['c'][0] # type: ignore
 
-        assert f['a[0].A'].name == "a0A"
-        assert f['a[1].A'].name == "a1A"
-        assert f['b.c'].name == "bc"
-        assert f['b.d'].name == "bd"
+        assert f['a[0].A'].name == "a0A" # type: ignore
+        assert f['a[1].A'].name == "a1A" # type: ignore
+        assert f['b.c'].name == "bc" # type: ignore
+        assert f['b.d'].name == "bd" # type: ignore
         assert f['c'] is None
         assert f['c[0]'] is None
 
