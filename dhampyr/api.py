@@ -1,12 +1,13 @@
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import is_dataclass, fields, MISSING
+from decimal import Decimal
 from enum import Enum
 from functools import partial, wraps
 from typing import Any, Annotated, Optional, Literal, Protocol, NamedTuple, Union, TypeVar, cast, overload, get_type_hints, get_origin, get_args
 from typing_extensions import dataclass_transform, TypeAlias, Unpack
 from .config import Configurable, typed_config
 from .validator import Validator, ValidationResult, ValidatorFactory
-from .converter import Converter, ConverterFactory, get_enum_conversion, get_factory, get_builtin_factory, get_user_factory
+from .converter import Converter, ConverterFactory, ListFactory, OptionalFactory, get_enum_conversion, get_factory, get_builtin_factory, get_user_factory
 from .verifier import Verifier
 from .variable import Variable
 from .context import ValidationContext, analyze_callable
@@ -23,9 +24,32 @@ T = TypeVar('T', covariant=True)
 # Input parser
 #------------------------------------------------------------
 class DictLike(Protocol[D]):
-    def get(self, values: D, key: str, as_list: bool) -> Any: ...
+    """
+    An interface providing ways to interpret an object as dictionary.
+    """
+    def get(self, values: D, key: str, as_list: bool) -> Any:
+        """
+        Extracts value(s) by key.
 
-    def keys(self, values: D) -> Iterable[str]: ...
+        Args:
+            values: A dictionary-like object.
+            key: Key.
+            as_list: Whether caller requires a list.
+        Returns:
+            Value fo the key.
+        """
+        ...
+
+    def keys(self, values: D) -> Iterable[str]:
+        """
+        Returns keys.
+
+        Args:
+            values: A dictionary-like object.
+        Returns:
+            Keys.
+        """
+        ...
 
 
 class ByDict(DictLike[dict]):
@@ -66,9 +90,9 @@ try:
     class ByMultiDict(DictLike[MultiDict]):
         def get(self, values: MultiDict, key: str, as_list: bool):
             if as_list:
-                return values.getlist(k) # type: ignore
+                return values.getlist(key)
             else:
-                return values[k] # type: ignore
+                return values[key]
 
         def keys(self, values: MultiDict) -> Iterable[str]:
             return values.keys()
@@ -79,6 +103,14 @@ except ImportError:
 
 
 def dict_like(values: D, _by_dict=ByDict(), _by_multidict=_by_multidict) -> DictLike[D]:
+    """
+    Get a `DictLike` object available for given value.
+
+    Args:
+        values: A dictionary-like object.
+    Returns:
+        A `DictLike` implementation.
+    """
     if is_multidict(values):
         return _by_multidict
     elif is_dataclass(values):
@@ -93,7 +125,21 @@ def dict_like(values: D, _by_dict=ByDict(), _by_multidict=_by_multidict) -> Dict
 # Output generator
 #------------------------------------------------------------
 class Modeller(Protocol[T]):
-    def create(self, attributes: dict[str, Any], *args, **kwargs) -> T: ...
+    """
+    An interface to construct an instance from validated values.
+    """
+    def create(self, attributes: dict[str, Any], *args, **kwargs) -> T:
+        """
+        Creates an instance of `T` .
+
+        Args:
+            attributes: Validated values.
+            args: Positinal arguments passed to `validate_dict` .
+            kwargs: Keyword arguments passed to `validate_dict` .
+        Returns:
+            Created instance.
+        """
+        ...
 
 
 class ToObject(Modeller[T]):
@@ -136,7 +182,10 @@ class LazyValidatorFactory(ValidatorFactory):
         default_factory: Optional[Callable[[], Any]] = None,
     ) -> None:
         super().__init__(converter, verifiers, alias, default, default_factory)
-        self.conversion_spec = None
+        self.conversion_spec: Optional[type] = None
+
+    def supply_conversion_spec(self, spec: Optional[type]) -> None:
+        self.conversion_spec = spec
 
     def create(self, cxt: ValidationContext) -> Validator:
         self.converter = converter(self.conversion_spec)
@@ -144,14 +193,25 @@ class LazyValidatorFactory(ValidatorFactory):
 
 
 def modeller(cls: type[T], _to_dict=ToDict()) -> Modeller[T]:
+    """
+    Get a modeller for given type.
+
+    Args:
+        cls: Type to find a modeller.
+    Returns:
+        A modeller for the type.
+    """
     if is_dataclass(cls):
         return ToDataclass(cls)
-    elif isinstance(cls, dict):
+    elif issubclass(cls, dict):
         return _to_dict # type: ignore
     else:
         return ToObject(cls)
 
 
+#------------------------------------------------------------
+# API
+#------------------------------------------------------------
 def v(
     conv: Any = ...,
     *vers: Any,
@@ -171,25 +231,22 @@ def v(
     Returns:
         Validator factory.
     """
+    if default is not MISSING and default_factory is not None:
+        raise ValueError(f"Either default or default_factory must not be set.")
+
     if conv is ... or conv is None:
         return LazyValidatorFactory(..., [verifier(v) for v in vers], alias, default, default_factory)
     else:
         return ValidatorFactory(converter(conv), [verifier(v) for v in vers], alias, default, default_factory)
 
 
-#@dataclass_transform(kw_only_default=True, field_specifiers=(v,))
-#def validatable():
-#    """
-#    A decorator for types where validating fields are declared by assigning validator.
-#    """
-#    return lambda x: x
 @dataclass_transform(kw_only_default=True, field_specifiers=(v,))
 def validatable(**settings: Unpack[Configurable]) -> Callable[[T], T]:
     """
     A decorator for class to validate its instance under the given configurations.
 
     ```python
-    >>> @validatable(skip_null=False, join_on_fail=False, isinstance_builtin=True)
+    >>> @validatable(skip_null=False, join_on_fail=False, strict_builtin=True)
     >>> class V:
     >>>     v1: v(int)
     >>>     v2: v([str])
@@ -198,7 +255,7 @@ def validatable(**settings: Unpack[Configurable]) -> Callable[[T], T]:
     This function also works as meta decorator which gives another decorator the ability to apply configurations to decorated type.
 
     ```python
-    >>> @validatable(skip_null=False, join_on_fail=False, isinstance_builtin=True)
+    >>> @validatable(skip_null=False, join_on_fail=False, strict_builtin=True)
     >>> def meta(t):
     >>>     return t
     >>>
@@ -239,6 +296,18 @@ def validatable(**settings: Unpack[Configurable]) -> Callable[[T], T]:
     return Decorator(**settings) # type: ignore
 
 
+def is_validatable(t: type) -> bool:
+    """
+    Check the type is validatable.
+
+    Args:
+        t: Type.
+    Returns:
+        Whether the type is decorated by `validatable` or its meta decorator.
+    """
+    return typed_config().get(t) is not None
+
+
 class VerifierMethod(Verifier):
     def __init__(self, name, func, dependencies):
         super().__init__(name, func, False)
@@ -252,6 +321,9 @@ class VerifierMethod(Verifier):
             def call(*args, **kwargs):
                 return self.func(instance, *args, **kwargs)
             return call
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        return self.func(*args, **kwargs)
 
     def fulfill_dependencies(self, failures):
         keys = failures.failures.keys()
@@ -332,7 +404,7 @@ def parse_validators(cls: type) -> dict[str, ValidatorFactory]:
     """
     def supply_converter(factory: ValidatorFactory, spec: Any) -> ValidatorFactory:
         if factory and isinstance(factory, LazyValidatorFactory):
-            factory.conversion_spec = spec
+            factory.supply_conversion_spec(spec)
         return factory
 
     def get_validator(ann: Any) -> Optional[ValidatorFactory]:
@@ -424,6 +496,8 @@ def validate_dict(cls: type[T], values: Any, context: Optional[ValidationContext
         validators = parse_validators(cls)
         key_filter = context.config.key_filter or (lambda x: x)
 
+        exsiting_keys = set(accessor.keys(values))
+
         for k, vf in validators.items():
             key = key_filter(vf.alias or k)
 
@@ -431,22 +505,16 @@ def validate_dict(cls: type[T], values: Any, context: Optional[ValidationContext
 
             with context[k, True] as cxt:
                 v = vf.create(cxt)
-                val = accessor.get(values, key, v.accept_list) if key in values else VALUE_MISSING
+                val = accessor.get(values, key, v.accept_list) if key in exsiting_keys else VALUE_MISSING
                 validated, f, use_alt = v.validate(val, cxt)
 
             # Validated value can be non-None even when the validation failed.
             if validated is not None:
                 attributes[k] = validated
             if f:
-                failures.add(k, f)
+                failures.add(k, f, key)
             if use_alt:
-                if vf.default != MISSING:
-                    attributes[k] = vf.default
-                elif vf.default_factory:
-                    attributes[k] = vf.default_factory()
-                elif hasattr(cls, k):
-                    alt = getattr(cls, k)
-                    attributes[k] = alt if not isinstance(alt, ValidatorFactory) else None
+                _put_default(attributes, k, v, vf, cls, cxt)
 
         if not context.config.ignore_remainders:
             for k in accessor.keys(values):
@@ -462,18 +530,9 @@ def validate_dict(cls: type[T], values: Any, context: Optional[ValidationContext
         for m in fetch_verifier_methods(cls, failures):
             f = m.verify(instance, context)
             if f is not None:
-                failures.add(m.name, f)
+                failures.add(m.name, f, None)
 
     return ValidationResult(instance, failures, context)
-
-
-#def _like_dictionary(values):
-#    return is_multidict(values) or is_dataclass(values) or (
-#        hasattr(values, '__contains__') \
-#            and hasattr(values, '__getitem__') \
-#            and hasattr(values, '__iter__') \
-#            and not isinstance(values, (list, str))
-#    )
 
 
 def _holder_for_path(holder, path):
@@ -485,12 +544,56 @@ def _holder_for_path(holder, path):
     return holder
 
 
+def _put_default(attrs: dict[str, Any], key: str, validator: Validator, vf: ValidatorFactory, cls: type, context: ValidationContext) -> None:
+    field = getattr(cls, key, MISSING)
+
+    def put():
+        if vf.default != MISSING:
+            attrs[key] = vf.default
+        elif vf.default_factory:
+            attrs[key] = vf.default_factory()
+        elif context.config.implicit_default:
+            rt = validator.converter.returns
+            if rt is bool:
+                attrs[key] = False
+            elif rt in (int, float, Decimal):
+                attrs[key] = 0
+            elif rt is str:
+                attrs[key] = ""
+            elif rt is bytes:
+                attrs[key] = b""
+            elif rt is Any or parse_optional(rt) is not None:
+                attrs[key] = None
+            else:
+                org = get_origin(rt)
+                if org:
+                    if issubclass(org, list):
+                        attrs[key] = []
+                else:
+                    if issubclass(rt, list):
+                        attrs[key] = []
+
+    if field is not MISSING and not isinstance(field, ValidatorFactory):
+        attrs[key] = field
+    elif field is not MISSING:
+        put()
+        if is_dataclass(cls):
+            # In dataclass, all fields will be initialized by its own scheme.
+            # Thus no value should be supplied.
+            pass
+        elif key not in attrs:
+            # To prevent instance attribute from referring class field, some value must be set.
+            attrs[key] = None
+    else:
+        put()
+
+
 ConverterSpec: TypeAlias = Any
 VerifierSpec: TypeAlias = Any
 
 
 def converter(
-    func: Union[ConverterSpec, list[ConverterSpec], tuple[str, ConverterSpec], list[tuple[str, ConverterSpec]]],
+    func: Union[ConverterSpec, list[ConverterSpec], tuple[str, ConverterSpec]],
 ) -> ConverterFactory:
     """
     Creates a `ConverterFactory` by given specifier.
@@ -526,56 +629,85 @@ def converter(
     def throw(e):
         raise e
 
-    is_iter = False
-    if isinstance(func, list):
-        # [int]
-        func, is_iter = func[0], True
-    elif get_origin(func) is list:
-        # list[int]
-        func, is_iter = get_args(func)[0], True
+    wrapper: Callable[[ConverterFactory], ConverterFactory] = lambda x: x
 
-    def user_defined(t: type, it, name, optional) -> ConverterFactory:
+    def wrap(
+        new: Callable[[ConverterFactory], ConverterFactory],
+        cur: Callable[[ConverterFactory], ConverterFactory],
+    ) -> Callable[[ConverterFactory], ConverterFactory]:
+        return lambda x: cur(new(x))
+
+    def is_list(v) -> tuple[bool, Any]:
+        if isinstance(v, list):
+            # [int]
+            return True, v[0]
+        elif get_origin(v) is list:
+            # list[int]
+            args = get_args(v)
+            return True, (args[0] if args else Any)
+        else:
+            return False, v
+
+    def is_opt(v) -> tuple[bool, Any]:
+        opt = parse_optional(v)
+        if opt is not None:
+            return True, opt
+        else:
+            return False, v
+
+    # Expand tuple specifier into name and function.
+    name = None
+    if isinstance(func, tuple) and len(func) == 2:
+        name, func = func
+
+    # Check iterable and optional.
+    check = True
+    while check:
+        check, fn = is_list(func)
+        if check:
+            func = fn
+            wrapper = wrap(ListFactory, wrapper)
+            continue
+        check, fn = is_opt(func)
+        if check:
+            wrapper = wrap(OptionalFactory, wrapper)
+            func = fn
+            continue
+
+    # Get base factory.
+    def user_defined(t: type, name) -> ConverterFactory:
         def create(v: Any, cxt: ValidationContext) -> t:
             return validate_dict(t, v, cxt).or_else(throw)
-        return get_user_factory(t, name, it, optional, create)
+        return get_user_factory(t, name, create)
 
-    def to_converter(fn, it, opt, name=None) -> ConverterFactory:
-        opt_type = parse_optional(fn)
-
-        if opt_type is not None:
-            return to_converter(opt_type, it, True, name)
-
-        builtin = get_builtin_factory(fn, name, it, opt)
+    def to_converter(fn, name=None) -> ConverterFactory:
+        builtin = get_builtin_factory(fn, name)
         if builtin:
             return builtin
         elif isinstance(fn, partial):
-            return get_factory(name or fn.func.__name__, it, opt, analyze_callable(fn), *fn.args, **fn.keywords)
+            return get_factory(name or fn.func.__name__, analyze_callable(fn), *fn.args, **fn.keywords)
         elif isinstance(fn, type):
             if issubclass(fn, Enum):
                 n, call = get_enum_conversion(fn)
-                return get_factory(name or n, it, opt, analyze_callable(call))
+                return get_factory(name or n, analyze_callable(call))
             else:
-                return user_defined(fn, it, name, opt)
+                return user_defined(fn, name)
         elif isinstance(fn, set):
             # Backward compatibility.
             t = next(iter(fn), None)
             if not isinstance(t, type):
                 raise TypeError(f"Set specifier must contain only a type.")
-            return user_defined(t, it, name, opt)
+            return user_defined(t, name)
         elif callable(fn):
             cc = analyze_callable(fn)
             name = name or getattr(fn, '__name__', 'Unknown')
-            return get_factory(name, it, opt, cc)
+            return get_factory(name, cc)
         else:
             raise TypeError(f"Given value is not valid Converter specifier: {fn}")
 
-    if isinstance(func, ConverterFactory):
-        return func
-    elif isinstance(func, tuple) and len(func) == 2:
-        name, fn = func
-        return to_converter(fn, is_iter, False, name)
-    else:
-        return to_converter(func, is_iter, False)
+    base = to_converter(func, name)
+
+    return wrapper(base)
 
 
 def verifier(
@@ -595,7 +727,7 @@ def verifier(
 
     def to_verifier(fn, it, name=None) -> Verifier:
         if isinstance(fn, Variable):
-            return fn._verifier
+            return fn._verifier(it)
         elif isinstance(fn, partial):
             cc = analyze_callable(fn)
             return Verifier[cc.in_type](name or fn.func.__name__, cc, it, *fn.args, **fn.keywords)

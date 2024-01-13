@@ -1,8 +1,8 @@
-from collections.abc import Generator, Iterator
+from collections.abc import Generator, Iterator, Callable
 import re
 from functools import partial
 from itertools import chain
-from typing import Any, Optional, Union
+from typing import Any, Optional, Union, NoReturn, overload
 from typing_extensions import Self
 
 
@@ -13,17 +13,15 @@ class ValidationFailure(Exception):
     def __init__(self, name: str = "invalid", message: str = "Validation failed", args=None, kwargs=None) -> None:
         """
         Constructor of the failure.
-
-        Args:
-            name: The name to distinguish the type of failure.
-            message: Error message format.
-            args: Values being used as positional arguments to build error message.
-            kwargs: Values being used as keyword arguments to build error message.
         """
         super().__init__(message)
+        #: The name to distinguish the type of failure.
         self._name = name
+        #: Error message format.
         self._message = message
+        #: Values being used as positional arguments to build error message.
         self._args = args or []
+        #: Values being used as keyword arguments to build error message.
         self._kwargs = kwargs or {}
 
     def __len__(self) -> int:
@@ -67,19 +65,16 @@ class ValidationFailure(Exception):
         return self._kwargs
 
     @classmethod
-    def abort(cls, *args, **kwargs):
+    def abort(cls, *args, **kwargs) -> NoReturn:
         """
         Utility method to raise a failure from custom converter/verifier function.
 
-        By invokiing this method on appropriate failure type, `ConversionFailure` or `VerificationFailure`,
+        By invokiing this method on appropriate failure type, `ConversionFailure` or `VerificationFailure` ,
         correct failure object of the type is constructed and raised.
 
-        Parameters
-        ----------
-        args: [object]
-            Arguments for error message.
-        kwargs: {str:object}
-            Keyword arguments for error message.
+        Args:
+            args: Positinal arguments for error message.
+            kwargs: Keyword arguments for error message.
         """
         raise PartialFailure(partial(cls, *args, **kwargs))
 
@@ -118,8 +113,10 @@ class ValidationPath:
         """
         if other == "" or other is None:
             return ValidationPath(self.path)
-        elif isinstance(other, (str, int)):
+        elif isinstance(other, int):
             return ValidationPath(self.path + [other])
+        elif isinstance(other, str):
+            return self + ValidationPath.of(other)
         elif isinstance(other, ValidationPath):
             return ValidationPath(self.path + other.path)
         else:
@@ -131,8 +128,10 @@ class ValidationPath:
         """
         if other == "" or other is None:
             pass
-        elif isinstance(other, (str, int)):
+        elif isinstance(other, int):
             self.path.append(other)
+        elif isinstance(other, str):
+            self += ValidationPath.of(other)
         elif isinstance(other, ValidationPath):
             self.path += other.path
         else:
@@ -228,6 +227,7 @@ class CompositeValidationFailure(ValidationFailure):
         super().__init__()
         #: Failures by path strings.
         self.failures: dict[Union[str, int], ValidationFailure] = {}
+        self.actual_keys: dict[str, str] = {}
 
     @property
     def message(self) -> str:
@@ -236,18 +236,29 @@ class CompositeValidationFailure(ValidationFailure):
         """
         return f"{len(self.failures)} validation failures arised."
 
-    def __iter__(self, pos: Optional[list[Union[str, int]]] = None) -> Generator[tuple[ValidationPath, ValidationFailure], None, None]:
+    def _actual_key(self, key: Union[str, int]) -> Union[str, int]:
+        if isinstance(key, str):
+            return self.actual_keys.get(key, key)
+        return key
+
+    def __iter__(
+        self,
+        pos: Optional[list[Union[str, int]]] = None,
+        as_input: bool = False,
+    ) -> Generator[tuple[ValidationPath, ValidationFailure], None, None]:
         """
         Iterates failures and yields each with its path.
 
         Args:
             pos: Root path where iteration starts.
+            as_input: Use actual keys for the validation path.
         """
         pos = pos or []
         for k, f in self.failures.items():
-            p = pos + [k]
+            key = self._actual_key(k) if as_input else k
+            p = pos + [key]
             if isinstance(f, CompositeValidationFailure):
-                for g in f.__iter__(p):
+                for g in f.__iter__(p, as_input):
                     yield g
             else:
                 yield (ValidationPath(p), f)
@@ -259,6 +270,9 @@ class CompositeValidationFailure(ValidationFailure):
         return len(self.failures)
 
     def __getitem__(self, key: Union[str, int]) -> Optional[ValidationFailure]:
+        """
+        Returns a failure at given path.
+        """
         if isinstance(key, str):
             f = self.failures
             for p in ValidationPath.of(key):
@@ -268,6 +282,9 @@ class CompositeValidationFailure(ValidationFailure):
             return self.failures.get(key, None)
 
     def __contains__(self, key: Union[str, int]) -> bool:
+        """
+        Checks whether a failure exists at given path.
+        """
         if isinstance(key, str):
             cf = self
             for p in ValidationPath.of(key):
@@ -280,14 +297,30 @@ class CompositeValidationFailure(ValidationFailure):
         else:
             return key in self.failures
 
-    def add(self, key: Union[str, int], f: ValidationFailure):
+    @overload
+    def add(self, key: str, f: ValidationFailure, actual_key: Optional[str]): ...
+    @overload
+    def add(self, key: int, f: ValidationFailure, actual_key: None = None): ...
+    def add(self, key: Union[str, int], f: ValidationFailure, actual_key: Optional[str] = None):
+        """
+        Adds a failure at the path.
+
+        Args:
+            key: Path.
+            f: Failure.
+        """
         self.failures[key] = f
+        if actual_key and isinstance(key, str):
+            self.actual_keys[key] = actual_key
 
 
 class PartialFailure(Exception):
-    def __init__(self, builder):
+    """
+    Incomplete failure for internal use.
+    """
+    def __init__(self, builder: Callable[..., ValidationFailure]) -> None:
         super().__init__()
         self.builder = builder
 
-    def create(self, **kwargs):
+    def create(self, **kwargs) -> ValidationFailure:
         return self.builder(**kwargs)

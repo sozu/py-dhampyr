@@ -1,11 +1,12 @@
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from functools import cached_property
 import inspect
-from typing import Any, TypeVar, Generic, Optional, Union
+from typing import Any, TypeVar, Generic, Optional, Union, Protocol
+from dhampyr.builtins import Any
 from .context import ValidationContext, analyze_callable, ContextualCallable
 from .failures import ValidationFailure, CompositeValidationFailure, PartialFailure
 from .builtins import *
-from .util import get_self_args
+from .util import get_self_args, isinstance_safe
 
 
 T = TypeVar('T')
@@ -38,18 +39,24 @@ class Converter(Generic[T, V]):
         self.name = name
         #: Function converting a value.
         self.func = func
-        #: Flag to interpret input value as iterable object and verify each value respectively.
+        #: Flag to interpret input value as iterable object and convert each value respectively.
         self.is_iter = is_iter
         self.args = args
         self.kwargs = kwargs
 
     @cached_property
     def accepts(self) -> Any:
+        """
+        Returns a type hint for the value this converter accepts.
+        """
         args = get_self_args(self)
         return args and args[0] or Any
 
     @cached_property
     def returns(self) -> Any:
+        """
+        Returns a type hint for the value this converter returns.
+        """
         args = get_self_args(self)
         return args[1] if len(args) > 0 else Any
 
@@ -96,53 +103,116 @@ class Converter(Generic[T, V]):
             return conv(value)
 
 
-class ConverterFactory:
+class ConverterFactory(Protocol):
+    args: Any
+    kwargs: Any
+    def create(self, context: ValidationContext) -> Converter:
+        ...
+
+
+class SingleValueFactory(ConverterFactory):
     def __init__(
         self,
         name: str,
-        is_iter: bool,
-        is_optional: bool,
         func: Callable[[ValidationContext], Callable],
         *args,
         **kwargs,
     ) -> None:
         self.name = name
-        self.is_iter = is_iter
         self.func = func
-        self.is_optional = is_optional
         self.args = args
-        self.kwargs = kwargs
+        self.kwargs: Any = kwargs
 
     def create(self, context: ValidationContext) -> Converter:
         call = self.func(context)
         cc = call if isinstance(call, ContextualCallable) else analyze_callable(call)
-        return Converter[cc.in_type, cc.out_type](self.name, cc, self.is_iter, *self.args, **self.kwargs)
+        return Converter[cc.in_type, cc.out_type](self.name, cc, False, *self.args, **self.kwargs)
+
+
+class ListFactory(ConverterFactory):
+    def __init__(self, base: ConverterFactory) -> None:
+        self.base = base
+
+    @property
+    def args(self) -> Any:
+        return self.base.args
+
+    @property
+    def kwargs(self) -> Any:
+        return self.base.kwargs
+
+    def create(self, context: ValidationContext) -> Converter:
+        converter = self.base.create(context)
+        in_type = list[converter.accepts]
+        out_type = list[converter.returns]
+        return Converter[in_type, out_type](converter.name, converter.func, True, *self.base.args, **self.base.kwargs)
+
+
+class OptionalFactory(ConverterFactory):
+    def __init__(self, base: ConverterFactory) -> None:
+        self.base = base
+
+    @property
+    def args(self) -> Any:
+        return self.base.args
+
+    @property
+    def kwargs(self) -> Any:
+        return self.base.kwargs
+
+    def _create(self, conv: Converter, in_type: Any, out_type: Any) -> Callable:
+        def _conv(v: in_type, cxt: ValidationContext) -> out_type:
+            if v is None:
+                return None
+            else:
+                return conv.func(v, cxt)
+        return _conv
+
+    def create(self, context: ValidationContext) -> Converter:
+        converter = self.base.create(context)
+        in_type = Optional[converter.accepts]
+        out_type = Optional[converter.returns]
+        return Converter[in_type, out_type](
+            converter.name,
+            self._create(converter, in_type, out_type),
+            converter.is_iter,
+            *self.base.args, **self.base.kwargs,
+        )
 
 
 def get_factory(
     name: str,
-    is_iter: bool,
-    is_optional: bool,
     func: Callable,
     *args,
     **kwargs,
 ) -> ConverterFactory:
-    return ConverterFactory(name, is_iter, is_optional, lambda cxt: func, *args, **kwargs)
+    return SingleValueFactory(name, lambda cxt: func, *args, **kwargs)
 
 
-def _create(t: Any, union: Any, create: Callable[[Any, ValidationContext], Any]) -> Callable:
-    def conv(v: union, cxt: ValidationContext) -> t:
-        if isinstance(v, t):
-            return v
-        return create(v, cxt)
-    return conv
+def get_user_factory(t: type, name: Optional[str], create: Callable[[Any, ValidationContext], Any]) -> ConverterFactory:
+    """
+    Creates a factory for user defined type.
 
+    Args:
+        t: User defined type.
+        name: Name of the converter. If `None` , type name is used.
+        is_iter: Flag to interpret input value as iterable object.
+        is_optional: Whether the converter can return `None` .
+        create: Callable to generate the instance. The signature of this is used for type parameters of the converter.
+    Returns:
+        Created factory.
+    """
+    def _create(t: Any, union: Any, create: Callable[[Any, ValidationContext], Any]) -> Callable:
+        def conv(v: union, cxt: ValidationContext) -> t:
+            if isinstance_safe(v, t):
+                return v
+            return create(v, cxt)
+        return conv
 
-def get_user_factory(t: type, name: Optional[str], is_iter: bool, is_optional: bool, create: Callable[[Any, ValidationContext], Any]) -> ConverterFactory:
     def conv(cxt: ValidationContext) -> Callable:
-        if cxt.config.isinstance_any:
+        if cxt.config.strict:
             def check(v: t, cxt: ValidationContext) -> t:
-                if isinstance(v, t):
+                if isinstance_safe(v, t):
                     return v
                 else:
                     raise PartialFailure(lambda converter: ConversionFailure(f"Input must be a instance of {t} but {type(v)}.", converter))
@@ -153,16 +223,32 @@ def get_user_factory(t: type, name: Optional[str], is_iter: bool, is_optional: b
             if in_t != inspect.Parameter.empty:
                 union = Union[t, in_t]
             return _create(t, union, create)
-    return ConverterFactory(name or t.__name__, is_iter, is_optional, conv)
+    return SingleValueFactory(name or t.__name__, conv)
 
 
-def get_builtin_factory(t: Any, name: Optional[str], is_iter: bool, is_optional: bool) -> Optional[ConverterFactory]:
+def get_builtin_factory(t: Any, name: Optional[str]) -> Optional[ConverterFactory]:
+    """
+    Creates a factory for a builtin type.
+
+    Args:
+        t: A builtin type.
+        name: Name of the converter. If `None` , type name is used.
+        is_iter: Flag to interpret input value as iterable object.
+        is_optional: Whether the converter can return `None` .
+    Returns:
+        Created factory.
+    """
     if t not in builtin_conversions:
         return None
 
     n, func = builtin_conversions[t]
 
     def conv(cxt: ValidationContext) -> Callable:
-        return convert_strict(t) if cxt.config.isinstance_builtin else func
+        if cxt.config.strict_builtin:
+            return convert_strict(t, False)
+        else:
+            sig = inspect.signature(func)
+            _, in_t = next(iter(sig.parameters.items()))
+            return func
 
-    return ConverterFactory(name or n, is_iter, is_optional, conv)
+    return SingleValueFactory(name or n, conv)

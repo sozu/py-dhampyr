@@ -2,11 +2,44 @@ import pytest
 from dhampyr.failures import *
 
 
+class TestValidationFailure:
+    def test_failure(self):
+        f = ValidationFailure("test", "test error", [1, 2, 3], dict(a=1, b=2))
+        assert len(f) == 1
+        p, v = next(iter(f))
+        assert str(p) == ""
+        assert v == f
+        assert not ("" in f)
+        assert f[""] is None
+        assert f.name == "test"
+        assert f.message == "test error"
+        assert f.args == [1, 2, 3]
+        assert f.kwargs == dict(a=1, b=2)
+
+    def test_abort(self):
+        try:
+            ValidationFailure.abort("test", "test error", [1, 2, 3], dict(a=1, b=2))
+        except PartialFailure as e:
+            f = e.create()
+            assert len(f) == 1
+            p, v = next(iter(f))
+            assert str(p) == ""
+            assert v == f
+            assert not ("" in f)
+            assert f[""] is None
+            assert f.name == "test"
+            assert f.message == "test error"
+            assert f.args == [1, 2, 3]
+            assert f.kwargs == dict(a=1, b=2)
+        else:
+            pytest.fail("Exception was not raised")
+
+
 class TestCompositeValidationFailure:
     def test_add(self):
         f = CompositeValidationFailure()
-        f.add('a', ValidationFailure("a"))
-        f.add('b', ValidationFailure("b"))
+        f.add('a', ValidationFailure("a"), None)
+        f.add('b', ValidationFailure("b"), None)
 
         assert f.failures['a'].name == "a"
         assert f.failures['b'].name == "b"
@@ -14,13 +47,13 @@ class TestCompositeValidationFailure:
     def test_get_by_key(self):
         f = CompositeValidationFailure()
 
+        a0 = CompositeValidationFailure()
+        a0.failures = {'A': ValidationFailure("a0A")}
         a1 = CompositeValidationFailure()
-        a1.failures['A'] = ValidationFailure("a0A")
-        a2 = CompositeValidationFailure()
-        a2.failures['A'] = ValidationFailure("a1A")
+        a1.failures = {'A': ValidationFailure("a1A")}
 
         a = CompositeValidationFailure()
-        a.failures = {0: a1, 1: a2}
+        a.failures = {0: a0, 1: a1}
 
         b = CompositeValidationFailure()
         b.failures = {'c': ValidationFailure("bc"), 'd': ValidationFailure("bd")}

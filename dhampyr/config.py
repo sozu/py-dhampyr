@@ -2,8 +2,7 @@ from collections.abc import Callable
 from contextvars import ContextVar
 from copy import deepcopy
 from dataclasses import dataclass, fields, field
-from functools import wraps
-from typing import Any, Optional, Union, TypeVar, TypedDict, cast, overload, TYPE_CHECKING
+from typing import Any, Optional, Union, TypeVar, TypedDict, cast, TYPE_CHECKING
 from typing_extensions import Self, TypeAlias, Unpack, NotRequired
 
 
@@ -19,8 +18,9 @@ if TYPE_CHECKING:
         allow_null: NotRequired[bool]
         allow_empty: NotRequired[bool]
         empty_specs: NotRequired[list[tuple[type, Callable[[type], bool]]]]
-        isinstance_builtin: NotRequired[bool]
-        isinstance_any: NotRequired[bool]
+        strict_builtin: NotRequired[bool]
+        strict: NotRequired[bool]
+        implicit_default: NotRequired[bool]
         join_on_fail: NotRequired[bool]
         ignore_remainders: NotRequired[bool]
         share_context: NotRequired[bool]
@@ -38,19 +38,21 @@ class ValidationConfiguration:
     key_filter: Optional[Callable[[str], str]] = None
     """A function which maps attribute names in validatable type to keys of input dictionary."""
     skip_null: bool = True
-    """If true, validator not prepended by `+` skips when the input is `None`."""
+    """Whether validator skips subsequent phases when the input is `None` if it is not prepeded by `+` and not set `None` handling explicitly."""
     skip_empty: bool = True
-    """If true, validator not prepended by `+` skips when the input is empty."""
+    """Whether validator skips subsequent phases when the input is empty if it is not prepeded by `+` and not set empty handling explicitly."""
     allow_null: bool = False
-    """If true, `+` prepended validator skips when the input is `None`."""
+    """Whether validator skips subsequent phases when the input is `None` if it is not set `None` handling explicitly."""
     allow_empty: bool = False
-    """If true, `+` prepended validator skips when the input is empty."""
+    """Whether validator skips subsequent phases when the input is empty if it is not set empty handling explicitly."""
     empty_specs: list[tuple[type, Callable[[type], bool]]] = field(default_factory=list)
     """Functions to check the value of specific type is empty or not."""
-    isinstance_builtin: bool = False
+    strict_builtin: bool = False
     """If true, `Converter` declared by builtin type checks that the input is instance of the type instead of applying constructor."""
-    isinstance_any: bool = False
+    strict: bool = False
     """If true, `Converter` declared by any type checks that the input is instance of the type instead of applying constructor."""
+    implicit_default: bool = False
+    """If true, default value or default factory is implicitly set for builtin types and optional types."""
     join_on_fail: bool = True
     """If true, failed iterable values are joined into single `None`."""
     ignore_remainders: bool = False
@@ -231,58 +233,3 @@ class TypedConfiguration:
 
 def typed_config(config: TypedConfiguration = TypedConfiguration()) -> TypedConfiguration:
     return config
-
-
-#def validatable(**settings: Unpack[Configurable]) -> Callable[[T], T]:
-#    """
-#    A decorator for class to validate its instance under the given configurations.
-#
-#    ```python
-#    >>> @validatable(skip_null=False, join_on_fail=False, isinstance_builtin=True)
-#    >>> class V:
-#    >>>     v1: v(int)
-#    >>>     v2: v([str])
-#    ```
-#
-#    This function also works as meta decorator which gives another decorator the ability to apply configurations to decorated type.
-#
-#    ```python
-#    >>> @validatable(skip_null=False, join_on_fail=False, isinstance_builtin=True)
-#    >>> def meta(t):
-#    >>>     return t
-#    >>>
-#    >>> @meta
-#    >>> class V:
-#    >>>     v1: v(int)
-#    >>>     v2: v([str])
-#    ```
-#
-#    Args:
-#        settings: Partial settings of `ValidationConfig` .
-#    """
-#    class Decorator:
-#        def __init__(self, **kwargs: Unpack[Configurable]):
-#            self.settings = kwargs.copy()
-#
-#        @overload
-#        def __call__(self, arg: type) -> type: ...
-#        @overload
-#        def __call__(self, arg: Callable) -> Callable: ...
-#        def __call__(self, arg: Union[type, Callable]) -> Union[type, Callable]:
-#            if isinstance(arg, type):
-#                typed_config().put(arg, self.settings)
-#                return arg
-#            elif callable(arg): 
-#                @wraps(arg)
-#                def inner(*args, **kw):
-#                    decorated = arg(*args, **kw)
-#                    if isinstance(decorated, type):
-#                        return self(decorated)
-#                    else:
-#                        # When decorator target is not a type, do nothing.
-#                        return decorated
-#                return inner
-#            else:
-#                raise ValueError("The target of @validatable decorator must be a type or another decorator function.")
-#
-#    return Decorator(**settings) # type: ignore

@@ -224,38 +224,6 @@ class ValidationContext:
         return self
 
 
-#def contextual_invoke(f: Callable[..., T], v: Any, context: Optional[ValidationContext], *args, **kwargs) -> T:
-#    """
-#    Invokes a function which takes one positional argument.
-#
-#    Given context is passed if the function takes `ValidationContext` via an annotated keyword argument.
-#
-#    Args:
-#        f: A function which takes at least one positional argument.
-#        v: An object passed to the function.
-#        context: A context passed to the function if it takes `ValidationContext` via an annotated keyword argument.
-#    Returns:
-#        Value returned from the function.
-#    """
-#    args = [v] + list(args)
-#
-#    if isinstance(f, type):
-#        sig = inspect.signature(f.__init__)
-#    elif callable(f):
-#        sig = inspect.signature(f)
-#    else:
-#        raise ValueError(f"The object passed to contextual_invoke is not callable: {f}")
-#
-#    for i, (n, p) in enumerate(sig.parameters.items()):
-#        if p.annotation == ValidationContext:
-#            if p.kind in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD):
-#                args[i:i] = [context]
-#            elif p.kind == inspect.Parameter.KEYWORD_ONLY:
-#                kwargs[n] = context
-#
-#    return f(*args, **kwargs)
-
-
 class ContextualCallable(Generic[T, V]):
     def __init__(
         self,

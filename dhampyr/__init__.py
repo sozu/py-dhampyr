@@ -1,20 +1,23 @@
-from .requirement import Requirement, RequirementPolicy, MissingFailure
+from .requirement import Requirement, RequirementPolicy, MissingFailure, NullFailure, EmptyFailure
 from .failures import ValidationFailure, MalformedFailure, CompositeValidationFailure
 from .converter import Converter, ConversionFailure
 from .verifier import Verifier, VerificationFailure
 from .context import ValidationContext
 from .config import default_config
 from .validator import Validator, ValidationResult
-from .api import v, validate_dict, converter, verifier, validate, validatable
+from .api import v, validate_dict, converter, verifier, validate, validatable, is_validatable
 from .variable import x
 
 __all__ = [
     "validatable",
+    "is_validatable",
     "ValidationResult",
     "Validator",
     "Requirement",
     "RequirementPolicy",
     "MissingFailure",
+    "NullFailure",
+    "EmptyFailure",
     "v",
     "validate_dict",
     "validate",
@@ -31,11 +34,3 @@ __all__ = [
     "default_config",
     "x",
 ]
-
-# for compatibility
-from . import validator
-from . import api
-validator.v = api.v
-validator.validate_dict = api.validate_dict
-validator.converter = api.converter
-validator.verifier = api.verifier

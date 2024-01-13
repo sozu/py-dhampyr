@@ -51,7 +51,7 @@ class TestNull:
         assert f is None
         assert b
 
-    def test_contextual(self):
+    def test_contextual_skip(self):
         r = Requirement(null=RequirementPolicy.CONTEXTUAL)
         f, b = r.validate(None)
         assert f is None
@@ -63,14 +63,14 @@ class TestNull:
         assert f is None
         assert b
 
-    def test_requires(self):
+    def test_requires_deny(self):
         r = Requirement(null=RequirementPolicy.REQUIRES)
         f, b = r.validate(None)
         assert isinstance(f, NullFailure)
         assert f.name == "null"
         assert not b
 
-    def test_requires_allowed(self):
+    def test_requires_allow(self):
         r = Requirement(null=RequirementPolicy.REQUIRES)
         f, b = r.validate(None, ValidationContext().configure(allow_null=True))
         assert f is None
@@ -97,7 +97,7 @@ class TestEmpty:
         assert f is None
         assert b
 
-    def test_contextual(self):
+    def test_contextual_skip(self):
         r = Requirement(empty=RequirementPolicy.CONTEXTUAL)
         f, b = r.validate("")
         assert f is None
@@ -109,20 +109,34 @@ class TestEmpty:
         assert f is None
         assert b
 
-    def test_requires(self):
+    def test_requires_deny(self):
         r = Requirement(empty=RequirementPolicy.REQUIRES)
         f, b = r.validate("")
         assert isinstance(f, EmptyFailure)
         assert f.name == "empty"
         assert not b
 
-    def test_requires_allowed(self):
+    def test_requires_allow(self):
         r = Requirement(empty=RequirementPolicy.REQUIRES)
         f, b = r.validate("", ValidationContext().configure(allow_empty=True))
         assert f is None
         assert not b
 
-    def test_emptiness(self):
+    def test_bytes(self):
+        r = Requirement(empty=RequirementPolicy.FAIL)
+        f, b = r.validate(b"")
+        assert isinstance(f, EmptyFailure)
+        assert f.name == "empty"
+        assert not b
+
+    def test_list(self):
+        r = Requirement(empty=RequirementPolicy.FAIL)
+        f, b = r.validate([])
+        assert isinstance(f, EmptyFailure)
+        assert f.name == "empty"
+        assert not b
+
+    def test_empty_specs(self):
         r = Requirement(empty=RequirementPolicy.FAIL)
         f, b = r.validate("a", ValidationContext().configure(empty_specs=[(str, lambda x: x == "a")]))
         assert isinstance(f, EmptyFailure)

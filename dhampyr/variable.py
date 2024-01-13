@@ -1,5 +1,6 @@
 import math
 from typing import Any, Optional
+from typing_extensions import Self
 from .context import ValidationContext
 from .verifier import Verifier
 
@@ -47,40 +48,51 @@ class Variable:
 
     There exists a constraint that, as shown in above example, keys in `kwargs` are overwritten by following operation of the same type.
     """
-    def __init__(self, f=lambda x:x, names=None, kwargs=None, not_=False):
+    def __init__(self, f=lambda x:x, names=None, kwargs=None, not_=False) -> None:
         self._id = f
         self._names = names or ['x']
         self._kwargs = kwargs or {}
         self._not = not_
 
-    def _sync(self, f, name, **kwargs):
+    def _sync(self, f, name, **kwargs) -> Self:
         kw = {f"{name}.{k}":v for k, v in kwargs.items()}
         return Variable(lambda x: f(self._id(x)), self._names+[name], dict(self._kwargs, **kw), self._not)
 
     @property
-    def len(self):
+    def len(self) -> Self:
         return self._sync(lambda x: len(x), 'len')
 
-    def in_(self, *v):
+    def in_(self, *v) -> Self:
         return self._sync(lambda x: x in v, 'in', value=v)
 
-    def has(self, v):
+    def has(self, v) -> Self:
         return self._sync(lambda x: v in x, 'has', value=v)
 
-    def inv(self):
+    def inv(self) -> Self:
         return self._sync(lambda x: not x, 'inv')
 
-    @property
-    def not_(self):
-        return Variable(self._id, self._names, self._kwargs, True)
+    def and_(self, other: Self) -> Self:
+        return Variable(
+            lambda x: bool(self._id(x)) and bool(other._id(x)),
+            self._names + ['and'] + other._names[1:],
+        )
+
+    def or_(self, other: Self) -> Self:
+        return Variable(
+            lambda x: bool(self._id(x)) or bool(other._id(x)),
+            self._names + ['or'] + other._names[1:],
+        )
 
     @property
-    def _verifier(self):
+    def not_(self) -> Self:
+        return Variable(self._id, self._names, self._kwargs, True)
+
+    def _verifier(self, is_iter: bool):
         func = lambda x: self(x)
         names = [n for n in self._names if n]
         if self._not:
             names[1:1] = ['not']
-        return Verifier('.'.join(names), func, False, **self._kwargs)
+        return Verifier('.'.join(names), func, is_iter, **self._kwargs)
 
     def __call__(self, x, context: Optional[ValidationContext] = None):
         b = bool(self._id(x)) 
@@ -94,91 +106,91 @@ class Variable:
         else:
             return self._sync(lambda x: getattr(x, key), f'@{key}')
 
-    def __getitem__(self, key):
+    def __getitem__(self, key) -> Self:
         return self._sync(lambda x: x[key], f'[{key}]')
 
-    def __eq__(self, v):
+    def __eq__(self, v) -> Self:
         return self._sync(lambda x: x == v, 'eq', value=v)
 
-    def __ne__(self, v):
+    def __ne__(self, v) -> Self:
         return self._sync(lambda x: x != v, 'ne', value=v)
 
-    def __lt__(self, th):
+    def __lt__(self, th) -> Self:
         return self._sync(lambda x: x < th, 'lt', value=th)
 
-    def __le__(self, th):
+    def __le__(self, th) -> Self:
         return self._sync(lambda x: x <= th, 'le', value=th)
 
-    def __gt__(self, th):
+    def __gt__(self, th) -> Self:
         return self._sync(lambda x: x > th, 'gt', value=th)
 
-    def __ge__(self, th):
+    def __ge__(self, th) -> Self:
         return self._sync(lambda x: x >= th, 'ge', value=th)
 
-    def __add__(self, v):
+    def __add__(self, v) -> Self:
         return self._sync(lambda x: x + v, 'add', value=v)
 
-    def __sub__(self, v):
+    def __sub__(self, v) -> Self:
         return self._sync(lambda x: x - v, 'sub', value=v)
 
-    def __mul__(self, v):
+    def __mul__(self, v) -> Self:
         return self._sync(lambda x: x * v, 'mul', value=v)
 
-    def __matmul__(self, v):
+    def __matmul__(self, v) -> Self:
         return self._sync(lambda x: x @ v, 'matmul', value=v)
 
-    def __truediv__(self, v):
+    def __truediv__(self, v) -> Self:
         return self._sync(lambda x: x / v, 'truediv', value=v)
 
-    def __floordiv__(self, v):
+    def __floordiv__(self, v) -> Self:
         return self._sync(lambda x: x // v, 'floordiv', value=v)
 
-    def __mod__(self, v):
+    def __mod__(self, v) -> Self:
         return self._sync(lambda x: x % v, 'mod', value=v)
 
-    def __divmod__(self, v):
+    def __divmod__(self, v) -> Self:
         return self._sync(lambda x: divmod(x, v), 'divmod', value=v)
 
-    def __pow__(self, v):
+    def __pow__(self, v) -> Self:
         return self._sync(lambda x: pow(x, v), 'pow', value=v)
 
-    def __lshift__(self, v):
+    def __lshift__(self, v) -> Self:
         return self._sync(lambda x: x << v, 'lshift', value=v)
 
-    def __rshift__(self, v):
+    def __rshift__(self, v) -> Self:
         return self._sync(lambda x: x >> v, 'rshift', value=v)
 
-    def __and__(self, v):
+    def __and__(self, v) -> Self:
         return self._sync(lambda x: x & v, 'and', value=v)
 
-    def __xor__(self, v):
+    def __xor__(self, v) -> Self:
         return self._sync(lambda x: x ^ v, 'xor', value=v)
 
-    def __or__(self, v):
+    def __or__(self, v) -> Self:
         return self._sync(lambda x: x | v, 'or', value=v)
 
-    def __neg__(self):
+    def __neg__(self) -> Self:
         return self._sync(lambda x: -x, 'neg')
 
-    def __pos__(self):
+    def __pos__(self) -> Self:
         return self._sync(lambda x: +x, 'pos')
 
-    def __abs__(self):
+    def __abs__(self) -> Self:
         return self._sync(lambda x: abs(x), 'abs')
 
-    def __invert__(self):
+    def __invert__(self) -> Self:
         return self._sync(lambda x: ~x, 'invert')
 
-    def __round__(self):
+    def __round__(self) -> Self:
         return self._sync(lambda x: round(x), 'round')
 
-    def __trunc__(self):
+    def __trunc__(self) -> Self:
         return self._sync(lambda x: math.trunc(x), 'trunc')
 
-    def __floor__(self):
+    def __floor__(self) -> Self:
         return self._sync(lambda x: math.floor(x), 'floor')
 
-    def __ceil__(self):
+    def __ceil__(self) -> Self:
         return self._sync(lambda x: math.ceil(x), 'ceil')
 
 

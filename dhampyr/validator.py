@@ -104,20 +104,22 @@ class Validator:
     By default, `+` prepended validator fails when one of those strategies holds.
     Use bitwise operators and strategy symbols to control the behavior of the validator for each strategy.
 
-    - `&` makes the validator fail, that is, expose the failure.
+    - `&` makes the validator fail.
     - `^` makes the validator skip the subsequent phases and set the default value without failure.
-    - `|` makes the validator continue the subsequent phases.
+    - `/` makes the validator continue the subsequent phases.
     - `None` is a symbol of *null* and `...` is a symbol of *empty*.
 
-    >>> class V:
-    >>>     # None is set without failure when the input does not exist.
-    >>>     v1: v(int) = None
-    >>>     # Fails when the input does not exist.
-    >>>     v2: +v(int)
-    >>>     # Fails when the input is missing whereas 0 is set when the input is None.
-    >>>     v3: +v(int) ^ None = 0
-    >>>     # Fails when the input is missing whereas 0 is set when the input is None.
-    >>>     v4: +v(lambda x: x or 0) | None
+    ```python
+    class V:
+        # None is set without failure when the input does not exist.
+        v1: Any = v(default=None)
+        # Fails when the input does not exist.
+        v2: int = +v()
+        # Fails when the input is missing whereas 0 is set when the input is None.
+        v3: int = +v(default=0) ^ None
+        # Fails when the input is missing whereas 0 is set when the input is None.
+        v4: Any = +v(lambda x: x or 0) / None
+    ```
 
     Conversion phase
     ----------------
@@ -138,15 +140,20 @@ class Validator:
         self.converter = converter
         self.verifiers = verifiers
         self.key = key
+        self.silent = False
 
-    def __pos__(self):
+    def __pos__(self) -> Self:
         self.requirement._requires = True
         self.requirement.missing = RequirementPolicy.FAIL
         self.requirement.null = RequirementPolicy.REQUIRES
         self.requirement.empty = RequirementPolicy.REQUIRES
         return self
 
-    def __and__(self, null_empty: Any):
+    def __invert__(self) -> Self:
+        self.silent = True
+        return self
+
+    def __and__(self, null_empty: Any) -> Self:
         if null_empty is None:
             self.requirement.null = RequirementPolicy.FAIL
         elif null_empty is Ellipsis:
@@ -155,7 +162,7 @@ class Validator:
             raise ValueError(f"Only None or Ellipsis(...) is available with bit-wise operation to Validator.")
         return self
 
-    def __truediv__(self, null_empty: Any):
+    def __truediv__(self, null_empty: Any) -> Self:
         if null_empty is None:
             self.requirement.null = RequirementPolicy.CONTINUE
         elif null_empty is Ellipsis:
@@ -164,7 +171,7 @@ class Validator:
             raise ValueError(f"Only None or Ellipsis(...) is available with bit-wise operation to Validator.")
         return self
 
-    def __xor__(self, null_empty: Any):
+    def __xor__(self, null_empty: Any) -> Self:
         if null_empty is None:
             self.requirement.null = RequirementPolicy.SKIP
         elif null_empty is Ellipsis:
@@ -201,30 +208,36 @@ class Validator:
         """
         context = context or ValidationContext.default()
 
-        join_on_fail = context.config.join_on_fail
+        def fail_or(v, f, b):
+            return v, None if self.silent else f, b
 
-        failure, to_continue = self.requirement.validate(value, context)
+        def exec():
+            join_on_fail = context.config.join_on_fail
 
-        if not to_continue:
-            return None, failure, True
+            failure, to_continue = self.requirement.validate(value, context)
 
-        val, failure = self.converter.convert(value, context)
-
-        if failure:
-            if not join_on_fail and self.converter.is_iter:
-                return val, failure, False
-            else:
+            if not to_continue:
                 return None, failure, True
 
-        for verifier in self.verifiers:
-            f = verifier.verify(val, context)
-            if f is not None:
-                if not join_on_fail and verifier.is_iter:
-                    return [None if (i in f) else v for i, v in enumerate(val)], f, False # type: ignore
-                else:
-                    return None, f, True
+            val, failure = self.converter.convert(value, context)
 
-        return val, None, False
+            if failure:
+                if not join_on_fail and self.converter.is_iter:
+                    return val, failure, False
+                else:
+                    return None, failure, True
+
+            for verifier in self.verifiers:
+                f = verifier.verify(val, context)
+                if f is not None:
+                    if not join_on_fail and verifier.is_iter:
+                        return [None if (i in f) else v for i, v in enumerate(val)], f, False # type: ignore
+                    else:
+                        return None, f, True
+
+            return val, None, False
+
+        return fail_or(*exec())
 
 
 class ValidatorFactory:
@@ -249,6 +262,11 @@ class ValidatorFactory:
     def __pos__(self) -> Self:
         ops = self.operations
         self.operations = lambda v: +ops(v)
+        return self
+
+    def __invert__(self) -> Self:
+        ops = self.operations
+        self.operations = lambda v: ~ops(v)
         return self
 
     def __and__(self, null_empty: Any) -> Self:

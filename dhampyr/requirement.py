@@ -30,10 +30,15 @@ class RequirementPolicy(Enum):
     Set of requirement policies.
     """
     FAIL = _fails
+    """A policy to abort validation with a failure."""
     SKIP = _skips
+    """A policy to skip subsequent phases without a failure."""
     CONTINUE = _continue
+    """A policy to continue validation."""
     CONTEXTUAL = _contextual
+    """A policy that configuration parameters determine to skip or continue."""
     REQUIRES = _requires
+    """A policy that configuration parameters determine to skip or abort."""
 
 
 VALUE_MISSING = object()
@@ -41,7 +46,7 @@ VALUE_MISSING = object()
 
 class Requirement:
     """
-    Represents the method which requires a value from dictionary-like object.
+    Specification whether the validator requires the existence of input value.
     """
     def __init__(
         self,
@@ -76,6 +81,9 @@ class Requirement:
         if isinstance(value, bytes) and len(value) == 0:
             return True
 
+        if isinstance(value, (list, set)) and len(value) == 0:
+            return True
+
         return False
 
     def validate(self, value: Any, context: Optional[ValidationContext] = None) -> tuple[Optional[ValidationFailure], bool]:
@@ -85,16 +93,18 @@ class Requirement:
         Args:
             value: A value to validate
         Returns:
-            First value is the failure caused by policy. Next boolean is the flag to continue subsequent validation phases.
+            Failure and a flag to continue subsequenct phases.
         """
         context = context or ValidationContext.default()
 
         if value == VALUE_MISSING:
             return self.missing(lambda: MissingFailure(), False, False)
         elif value is None:
-            skip, allow = context.config.skip_null, context.config.allow_null
-
-            return self.null(lambda: NullFailure(), skip, allow)
+            return self.null(
+                lambda: NullFailure(),
+                context.config.skip_null,
+                context.config.allow_null,
+            )
         else:
             skip, allow = context.config.skip_empty, context.config.allow_empty
 
@@ -113,7 +123,7 @@ class Requirement:
 
 class MissingFailure(ValidationFailure):
     """
-    Validation failure representing that a required attribute is not found.
+    Represents a failure that a required attribute is not found.
     """
     def __init__(self):
         super().__init__("missing", "This value is required.")
@@ -121,7 +131,7 @@ class MissingFailure(ValidationFailure):
 
 class NullFailure(ValidationFailure):
     """
-    Represents a failure that the target values is None.
+    Represents a failure that the target values is `None` .
     """
     def __init__(self):
         super().__init__("null", "This value must not be null.")
@@ -129,7 +139,7 @@ class NullFailure(ValidationFailure):
 
 class EmptyFailure(ValidationFailure):
     """
-    Represents a failure that the target values is empty.
+    Represents a failure that the target value is considered empty.
     """
     def __init__(self):
         super().__init__("empty", "This value must not be empty.")

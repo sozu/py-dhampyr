@@ -30,6 +30,65 @@ class TestRepr:
         assert str(p) == "a.b[1].c[1][2][3].d"
 
 
+class TestAdd:
+    def test_none(self):
+        p = ValidationPath.of("a[0].b")
+        pp = p + None
+        assert p.path == ["a", 0, "b"]
+        assert pp.path == ["a", 0, "b"]
+
+    def test_empty(self):
+        p = ValidationPath.of("a[0].b")
+        pp = p + ""
+        assert p.path == ["a", 0, "b"]
+        assert pp.path == ["a", 0, "b"]
+
+    def test_str(self):
+        p = ValidationPath.of("a[0].b")
+        pp = p + "c[1].d"
+        assert p.path == ["a", 0, "b"]
+        assert pp.path == ["a", 0, "b", "c", 1, "d"]
+
+    def test_int(self):
+        p = ValidationPath.of("a[0].b")
+        pp = p + 1
+        assert p.path == ["a", 0, "b"]
+        assert pp.path == ["a", 0, "b", 1]
+
+    def test_path(self):
+        p = ValidationPath.of("a[0].b")
+        pp = p + ValidationPath.of("c[1].d")
+        assert p.path == ["a", 0, "b"]
+        assert pp.path == ["a", 0, "b", "c", 1, "d"]
+
+
+class TestIadd:
+    def test_none(self):
+        p = ValidationPath.of("a[0].b")
+        p += None
+        assert p.path == ["a", 0, "b"]
+
+    def test_empty(self):
+        p = ValidationPath.of("a[0].b")
+        p += ""
+        assert p.path == ["a", 0, "b"]
+
+    def test_str(self):
+        p = ValidationPath.of("a[0].b")
+        p += "c[1].d"
+        assert p.path == ["a", 0, "b", "c", 1, "d"]
+
+    def test_int(self):
+        p = ValidationPath.of("a[0].b")
+        p += 1
+        assert p.path == ["a", 0, "b", 1]
+
+    def test_path(self):
+        p = ValidationPath.of("a[0].b")
+        p += ValidationPath.of("c[1].d")
+        assert p.path == ["a", 0, "b", "c", 1, "d"]
+
+
 class TestUnder:
     def test_under(self):
         p1 = ValidationPath.of("a[0].b.c[1]")

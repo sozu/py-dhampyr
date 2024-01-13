@@ -128,16 +128,34 @@ class TestSingle:
         assert (math.ceil(x))._id(1.5) == 2
 
 
+class TestBoolean:
+    def test_and(self):
+        x1 = (x + 1) < 4
+        x2 = x > 1
+        xx = x1.and_(x2)
+        assert xx._names == ["x", "add", "lt", "and", "gt"]
+        assert xx._id(2) is True
+        assert xx._id(1) is False
+
+    def test_or(self):
+        x1 = (x + 1) > 4
+        x2 = x < 1
+        xx = x1.or_(x2)
+        assert xx._names == ["x", "add", "gt", "or", "lt"]
+        assert xx._id(0) is True
+        assert xx._id(3) is False
+
+
 class TestCombination:
     def test_attr_combination(self):
         class C:
             def __init__(self, a):
                 self.a = a
 
-        f = (x.a.len * 3 > 5)._verifier.verify(C("abc"))
+        f = (x.a.len * 3 > 5)._verifier(False).verify(C("abc"))
         assert f is None
 
-        f = (x.a.len * 3 > 5)._verifier.verify(C("a"))
+        f = (x.a.len * 3 > 5)._verifier(False).verify(C("a"))
         assert f is not None
         assert (f.name, f.kwargs) == ("x.@a.len.mul.gt", {"gt.value": 5, "mul.value": 3})
 
@@ -146,25 +164,25 @@ class TestCombination:
             def __init__(self, a):
                 self.a = a
 
-        f = (x.not_.a.len * 3 > 5)._verifier.verify(C("a"))
+        f = (x.not_.a.len * 3 > 5)._verifier(False).verify(C("a"))
         assert f is None
 
-        f = (x.not_.a.len * 3 > 5)._verifier.verify(C("abc"))
+        f = (x.not_.a.len * 3 > 5)._verifier(False).verify(C("abc"))
         assert f is not None
         assert (f.name, f.kwargs) == ("x.not.@a.len.mul.gt", {"gt.value": 5, "mul.value": 3})
 
     def test_index_combination(self):
-        f = (x['a'].len * 3 > 5)._verifier.verify(dict(a="abc"))
+        f = (x['a'].len * 3 > 5)._verifier(False).verify(dict(a="abc"))
         assert f is None
 
-        f = (x['a'].len * 3 > 5)._verifier.verify(dict(a="a"))
+        f = (x['a'].len * 3 > 5)._verifier(False).verify(dict(a="a"))
         assert f is not None
         assert (f.name, f.kwargs) == ("x.[a].len.mul.gt", {"gt.value": 5, "mul.value": 3})
 
     def test_not_index_combination(self):
-        f = (x.not_['a'].len * 3 > 5)._verifier.verify(dict(a="a"))
+        f = (x.not_['a'].len * 3 > 5)._verifier(False).verify(dict(a="a"))
         assert f is None
 
-        f = (x.not_['a'].len * 3 > 5)._verifier.verify(dict(a="abc"))
+        f = (x.not_['a'].len * 3 > 5)._verifier(False).verify(dict(a="abc"))
         assert f is not None
         assert (f.name, f.kwargs) == ("x.not.[a].len.mul.gt", {"gt.value": 5, "mul.value": 3})

@@ -5,6 +5,8 @@ import re
 from typing import Any, Union, Optional
 from decimal import Decimal
 from uuid import UUID
+from .util import isinstance_safe
+
 
 #----------------------------------------------------------------
 # Builtin converters.
@@ -38,19 +40,21 @@ strict_conversions: dict[type, dict[type, Callable[[Any], Any]]] = {
 }
 
 
-def _strict(t: Any, union: Any, conversions: dict[type, Callable]) -> Callable:
-    def conv(v: union) -> t:
-        if isinstance(v, t):
+def _strict(t: Any, union: Any, is_optional: bool, conversions: dict[type, Callable]) -> Callable:
+    def conv(v: (Optional[union] if is_optional else union)) -> (Optional[t] if is_optional else t):
+        if isinstance_safe(v, t):
+            return v
+        elif v is None and is_optional:
             return v
         else:
             for u, f in conversions.items():
-                if isinstance(v, u):
+                if isinstance_safe(v, u):
                     return f(v)
             raise ValueError(f"{type(v)} is not {t}.")
     return conv
 
 
-def convert_strict(t: Any) -> Callable:
+def convert_strict(t: Any, is_optional: bool) -> Callable:
     if t is Any:
         return _noop
     elif not isinstance(t, type):
@@ -66,7 +70,7 @@ def convert_strict(t: Any) -> Callable:
             for u in other_types[1:]:
                 union = Union[union, u]
 
-        return _strict(t, union, conversions)
+        return _strict(t, union, is_optional, conversions)
 
 
 def convert_bool() -> Callable:
@@ -208,16 +212,18 @@ def convert_uuid() -> Callable:
     return conv
 
 
-def get_enum_conversion(t: type, holder={}) -> tuple[str, Callable[[Any], Any]]:
-    if t in holder:
-        return t.__name__, holder[t]
+def get_enum_conversion(t: type, holder: dict[type, Callable] = {}) -> tuple[str, Callable[[Any], Any]]:
+    key = t
+
+    if key in holder:
+        return t.__name__, holder[key]
     else:
         def conv(v: Union[t, str]) -> t:
-            if isinstance(v, t):
+            if isinstance_safe(v, t):
                 return v
             else:
                 return t.__getitem__(v) # type: ignore
-        return t.__name__, holder.setdefault(t, conv)
+        return t.__name__, holder.setdefault(key, conv)
 
 
 builtin_conversions: dict[type, tuple[str, Callable[[Any], Any]]] = {

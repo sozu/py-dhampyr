@@ -6,13 +6,16 @@ from dhampyr.api import v, parse_validators, validate_dict, validatable
 from dhampyr.context import ValidationContext
 
 
+# pyright: reportOptionalMemberAccess=false
+
+
 class TestParse:
     class Requirement:
         v1 = None
         v2: int
-        v3: int = v(int)
-        v4: int = +v(int)
-        v5 = v(int, default=5) / ... & None
+        v3: int = v()
+        v4: int = +v()
+        v5 = v(..., default=5) / ... & None
 
     def test_parse(self):
         vs = parse_validators(TestParse.Requirement)
@@ -22,7 +25,7 @@ class TestParse:
 class TestMalformed:
     def test_malformed(self):
         class C:
-            v1 = v(int)
+            v1: int = v()
         r = validate_dict(C, [])
         assert [(str(p), f.name) for p, f in r.failures] == [("", "malformed")]
 
@@ -186,7 +189,7 @@ class TestList:
         class V:
             v1: list[int] = v(..., default_factory=lambda: [1])
             v2: list[int] = +v(..., default_factory=lambda: [2])
-            v3: list[int] = v([("c2", int)], default_factory=lambda: [3])
+            v3: list[int] = v(("c2", [int]), default_factory=lambda: [3])
             v4: list[E] = v(..., default_factory=lambda: [E.E5])
             v5: list[int] = v([p(int, base=2)], default_factory=lambda: [5])
             v6: list[int] = v(..., [gt0], default_factory=lambda: [6])
@@ -257,12 +260,12 @@ class TestList:
             "v7[1]",
             "v8",
         ]
-        assert r.failures["v1"][1].name == "int"
-        assert r.failures["v1"][2].name == "int"
+        assert r.failures["v1"][1].name == "int" # type: ignore
+        assert r.failures["v1"][2].name == "int" # type: ignore
         assert r.failures["v2"].name == "empty"
-        assert r.failures["v3"][1].name == "c2"
-        assert r.failures["v5"][1].name == "int"
-        assert r.failures["v5"][1].kwargs == dict(base=2)
+        assert r.failures["v3"][1].name == "c2" # type: ignore
+        assert r.failures["v5"][1].name == "int" # type: ignore
+        assert r.failures["v5"][1].kwargs == dict(base=2) # type: ignore
         assert r.failures["v8"].name == "longer"
         assert r.get().v1 == [1]
         assert r.get().v2 == [2]
@@ -545,7 +548,7 @@ class TestTypeConfiguration:
             q1: int = +v()
             q2: int = +v()
 
-        @validatable(isinstance_builtin=True)
+        @validatable(strict_builtin=True)
         class P:
             p1: Optional[Q] = +v(Q, default=None)
             p2: Optional[Q] = +v(Q, default=None)
@@ -558,9 +561,9 @@ class TestTypeConfiguration:
 
     def test_typed(self):
         c = ValidationContext()
-        c["v1"]["p2"].configure(isinstance_builtin=False, ignore_remainders=False)
-        c["v2"].configure(isinstance_builtin=True)
-        c["v2"]["q1"].configure(isinstance_builtin=False)
+        c["v1"]["p2"].configure(strict_builtin=False, ignore_remainders=False)
+        c["v2"].configure(strict_builtin=True)
+        c["v2"]["q1"].configure(strict_builtin=False)
 
         r = self._validate(dict(
             v1 = dict(
