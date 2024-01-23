@@ -4,7 +4,7 @@
 
 This library provides data validation functionalities designed for HTTP applications. Compared to other validation libraries, this library has following features.
 
-- Validation schemes are declared in annotation context which is introduced in python 3.5.
+- Validation schemes are declared like dataclass field specifier.
 - Each validation scheme can be composed of simple functions including lambda expressions.
 - Errors in validations are represented with informative objects, not with just error messages.
 
@@ -20,57 +20,62 @@ $ pip install dhampyr==1.0.0
 
 ### Declaration of validation scheme
 
-The module `dhampyr` exports a function `v` which creates a `Validator`. This function is designed to be used in annotation context of a class attribute.
+The module `dhampyr` exports a function `v` which creates a `Validator`. This function is designed to be used like *dataclass* field specifier.
 
 ```
 from dhampyr import *
 
 class C:
-    a: +v(int, lambda x: x < 5, lambda x: x > 2) = 0
+    a: int = +v(..., lambda x: x < 5, lambda x: x > 2, default=0)
 ```
 
-In above code, `C` is considered as a *validatable type* and `a` is a *validatable attribute*. While you can use any name for validatable type, the name of each validatable attribute corresponds to the key in input dictionary which is associated with a value the `Validator` will be applied to.
-
-A validation scheme of this library is composed of three phases, existence check by `Requirement`, type conversion by `Converter` and value verifications by `Verifier`s. The first argument in `v` specifies the `Converter` and each of following optional arguments specifies `Verifier`. As described below, prepended `+` operator specifies the validator requires that the input value exists.
-
-This code shows the simplest but intrinsic declaration style of `Converter`, just a function `int`. Similarly, two `Verifier`s are declared by simple functions (lambda expressions) which takes a value and returns `bool`. Verification phase is regarded as successful only when all `Verifier`s return `True`.
-
-Each validation scheme is executed as follows.
-
-1. Creates an instance of a validatable type (*validated instance*).
-2. Applies the `Requirement` to check the existence of input value (*requirement phase*).
-3. Applies the `Converter` to an input value and obtains converted value (*conversion phase*).
-4. Applies `Verifier`s to the converted value (*verification phase*).
-5. If all phases succeed, assigns the converted value to the validated instance as an attribute of the same name as the validatable attribute.
-
-`validate_dict` is a function which applies every validation scheme of a validatable type to an input dictionary.
+`v` can be used as the metadata in `Annotated` annotation. In this case, the value assigned to the attribute becomes a default value.
 
 ```
-r = validate_dict(C, dict(a = "3"))
+from dhampyr import *
+from typing import Annotated
+
+class C:
+    a: Annotated[int, +v(..., lambda x: x < 5, lambda x: x > 2)] = 0
+```
+
+`v` has additional keyword arguments. For example, `alias` specifies the corresponding key in the input explicitly, Arguments of *dataclass* field specifier such as `default` or `default_factory` are also available. See API document to know all possible arguments.
+
+The validation scheme starts with the declaration of *validatable type* like `C` and an input dict-like object. Each key-value pair in the input becomes an input value to an attribute whose name (or specified alias) matches to the key. For each attribute, three phases run in order.
+
+1. Checks whether the input value exists or not. `Requirement` setting of the `Validator` determines the behavior according to the existence.
+2. Converts the input value by `Converter` which by default is the annotated type of the attribute. Conversion function can be set in the first argument of `v` .
+3. Converted value is verified by `Verifier`s given in positional arguments in `v` . A function which takes a converted value and returns `bool` is the most simple one representing `Verifier` .
+
+The scheme finally returns an instance of the *validatable type* where values passing those phases are assigned to the attributes.
+
+`validate_dict` is the function which runs the scheme.
+
+```
+r = validate_dict(C, dict(a="3"))
 d = r.get()
 
+assert bool(r)
 assert type(d) == C
 assert d.a == 3
 ```
 
-`validate_dict` returns a `ValidationResult` object which contains validated instance and errors. In this case, as the input value can be converted by `int` and satisfies both verifications, converted value is assigned to an attribute of validated instance successfully.
-
-`v` takes additional keyword argument `key` whose value is used as the key in input dictionary instead of attribute name. Keys containing a character which is not available in attribute name are also dealt with by this feature. Be aware that this key is used only when extracting a value from the input dictionary, thereby it will never be exposed in the result of validation such as the path of failure which is described below.
+`validate_dict` returns a `ValidationResult` object which contains validated instance and errors. It also is available in boolean context to check if the scheme has succeeded or not.
 
 ### Composite validation
 
-Nested validatable types are able to be validated by declaring `Converter` with `set` including a child type.
+Nested validatable types are available without any special declaration.
 
 ```
 from dhampyr import *
 
 class D:
-    a: v(int)
+    a: int = v()
 
 class C:
-    a: v({D})
+    a: D = v()
 
-r = validate_dict(C, dict(a = dict(a = "3")))
+r = validate_dict(C, dict(a=dict(a="3")))
 d = r.get()
 
 assert type(d) == C
@@ -78,17 +83,17 @@ assert type(d.a) == D
 assert d.a.a == 3
 ```
 
-Each value in iterable input can be converted and verified respectively. In this case, `Coverter` and `Verifier`s should be declared as a `list` which includes their specifier. Nested type declaration are available as well.
+Each value in iterable input are converted and verified respectively. In this case, `Coverter` and `Verifier`s should be declared as a `list` which includes their specifier. Nested type declaration are available as well.
 
 ```
 class D:
-    a: v(int)
+    a: int = v()
 
 class C:
-    a: v([int], [lambda x: x > 0])
-    b: v([{D}])
+    a: list[int] = v(..., [lambda x: x > 0])
+    b: list[D] = v()
 
-r = validate_dict(C, dict(a = [1, 2, 3], b = [dict(a = 4), dict(a = 5), dict(a = 6)]))
+r = validate_dict(C, dict(a=[1, 2, 3], b=[dict(a=4), dict(a=5), dict(a=6)]))
 d = r.get()
 
 assert d.a == [1, 2, 3]
@@ -114,11 +119,11 @@ def gt1(x):
     return x > 1
 
 class C:
-    a: v(int) = 0
-    b: v(int, lt3) = 0
-    c: v(int, lt3, gt1) = 0
+    a: int = v(default=0)
+    b: int = v(..., lt3, default=0)
+    c: int = v(..., lt3, gt1, default=0)
 
-r = validate_dict(C, dict(a = "a", b = "3", c = "1"))
+r = validate_dict(C, dict(a="a", b="3", c="1"))
 
 assert bool(r) is False
 assert len(r.failures) == 3
@@ -144,12 +149,12 @@ Composite validation makes errors hierarchical. You should use *path* composed o
 from dhampyr import *
 
 class D:
-    b: v([int]) = []
+    b: list[int] = v(default_factory=list)
 
 class C:
-    a: v([{D}]) = []
+    a: list[D] = v(default_factory=list)
 
-r = validate_dict(C, dict(a = [dict(b = "123"), dict(b = "45a"), dict(b = "789")]))
+r = validate_dict(C, dict(a=[dict(b="123"), dict(b="45a"), dict(b="789")]))
 
 assert r.failures["a"][1]["b"][2].name == "int"
 assert [(str(p), list(p)) for p, f in r.failures] == [("a[1].b[2]", ["a", 1, "b", 2])]
@@ -168,27 +173,27 @@ d = r.or_else(handle_error)
 
 ### Requirement phase
 
-`+` operator lets a `Validator` fail if the input value is missing, `None` or determined to be *empty*.
+`+` operator lets a `Validator` fail if the input value is missing, `None` or considered to be *empty*.
 
 ```
 from dhampyr import *
 
 class C:
-    a: +v(int) = 0
+    a: int = +v(default=0)
 
 r = validate_dict(C, dict())
 
 assert r.failures["a"].name == "missing"
 ```
 
-By default, The *empty* condition is applied only to the input whose type is `str` or `bytes`. For both types, whether the length of the input is not 0 is checked. You can add conditions associated with types by configuration interfaces.
+By default, The *empty* condition is applied to the input whose type is `str` `bytes` `list` or `set` . The input is considered empty when its length (returned by `len` ) is 0.  You can add conditions for other types by configuration interfaces.
 
 Although all of those 3 conditions must be satisfied by default, we sometimes need to change the behavior against each condition respectively. This can be done by bitwise operator and condition specifiers.
 
 |operator|behavior|
 |:---|:---|
 |`&`|Let validator fail when the next condition is not satisfied.|
-|`\|`|Let validator continue to subsequent phases even when the next condition is not satisfied.|
+|`/`|Let validator continue to subsequent phases even when the next condition is not satisfied.|
 |`^`|Let validator skip subsequent phases without failure when the next condition is not satisfied.|
 
 Conditions for `None` and *empty* are specified with `None` and `...` respectively.
@@ -198,12 +203,12 @@ def longer5(x):
     return len(x) > 5
 
 class C:
-    a: +v(str) = "a"
-    b: +v(str, longer5) ^ None = "b"
-    c: +v(str, longer5) | ... = "c"
-    d: +v(str, longer5) ^ ... = "d"
+    a: str = +v(default="a")
+    b: str = +v(..., longer5, default="b") ^ None
+    c: str = +v(..., longer5, default="c") / ...
+    d: str = +v(..., longer5, default="d") ^ ...
 
-r = validate_dict(C, dict(a = "", b = None, c = "", d = ""))
+r = validate_dict(C, dict(a="", b=None, c="", d=""))
 d = r.get()
 
 assert r.failures["a"].name == "empty"
@@ -214,11 +219,11 @@ assert d.b == "b"
 assert d.d == "d"
 ```
 
-Validation on `c` fails at verification phase because `|` continues validation scheme to empty input.
+The example shows that validation on `c` failed at verification phase because `/` continues validation scheme to empty input.
 
 ### Conversion phase
 
-Conversion phase is done by a `Conveter` which can be declared by multiple styles. In any style, the input values is treated as an argument.
+Conversion phase is done by a `Conveter` which can be declared by multiple styles.
 
 |specifier|example|name|behavior|
 |:---|:---|:---|:---|
@@ -226,25 +231,24 @@ Conversion phase is done by a `Conveter` which can be declared by multiple style
 |`functools.partial`|`partial(int, base=2)`|name of base function|Invoke the `partial` object.|
 |tuple of `str` and another specifier|`("integer", int)`|first element|Same as the specifier at second element.|
 |`enum.Enum` type|`E`|name of the type|Get an enum value whose name matches the input.|
-|`set` of child type|`{D}`|name of the type|Invoke `validate_dict` recursively. See nested validation.|
 
 ```
 from functools import partial as p
 from enum import Enum, auto
 
 class D:
-    a: v(int) = 0
+    a: int = v(default=0)
 
 class E(Enum):
     E1 = auto()
     E2 = auto()
 
 class C:
-    a: v(int) = 0
-    b: v(p(int, base=2)) = 0
-    c: v(("first", lambda x: x.split(",")[0])) = None
-    d: v({D}) = None
-    e: v(E) = E.E1
+    a: int = v(default=0)
+    b: int = v(p(int, base=2), default=0)
+    c: str = v(("first", lambda x: x.split(",")[0]), default="")
+    d: D = v()
+    e: E = v(default=E.E1)
 
 r = validate_dict(C, dict(a = "3", b = "101", c = "a,b,c", d = dict(a = "4"), e = "E2"))
 d = r.get()
@@ -256,20 +260,20 @@ assert d.d.a == 4
 assert d.e == E.E2
 ```
 
-Freezed arguments of `partial` function (for `b`, `base = 2`) are passed to error object when the converter fails. They can be obtained via `args` or `kwargs` attribute of `ValidationFailure`. They are for example needed to construct error message.
+Freezed arguments of `partial` function (for `b`, `base=2`) are passed to error object when the converter fails. They can be obtained via `args` or `kwargs` attribute of `ValidationFailure` for the use of such as error message creation.
 
 Tuple style shown at `c` is available to give an explicit name to a `Converter`, especially for the case using lambda expression. 
 
 `Enum` type is also a type but it is treated in another way. The `Converter` invokes `__getitem__` class method to find an enum value by its name. Be sure that this method is case sensitive.
 
-As described in composite validation section, enclosing the specifier with `[]` let `Converter` consider input as iterable values and convert each value respectively. Next code will let you understand this behavior easily.
+As described in composite validation section, the `Converter` of iterable attribute interprets the input as iterable values and convert each value respectively, which is clarified in following code.
 
 ```
 class C:
-    a: v(int) = 0
-    b: v([int]) = []
+    a: int = v(default=0)
+    b: list[int] = v(default_factory=list)
 
-r = validate_dict(C, dict(a = "123", b = "123"))
+r = validate_dict(C, dict(a="123", b="123"))
 
 assert r.get().a == 123
 assert r.get().b == [1, 2, 3]
@@ -293,15 +297,15 @@ def lt(x, threshold):
     return x < threshold
 
 class C:
-    a: v(int, lt3) = 0
-    b: v(int, p(lt, threshold = 3))
-    c: v(int, ("less_than_3", lambda x: x < 3)) = 0
-    d: v([int], [lt3], lambda x: len(x) < 5) = []
+    a: int = v(..., lt3, default=0)
+    b: int = v(..., p(lt, threshold = 3))
+    c: int = v(..., ("less_than_3", lambda x: x < 3), default=0) = 0
+    d: list[int] = v(..., [lt3], lambda x: len(x) < 5, default_factory=list)
 
-r = validate_dict(C, dict(a = 3, b = 3, c = 3, d = [1, 1, 1, 1, 1]))
+r = validate_dict(C, dict(a=3, b=3, c=3, d=[1, 1, 1, 1, 1]))
 assert {str(p) for p, _ in r.failures} == {"a", "b", "c", "d"}
 
-r = validate_dict(C, dict(a = 2, b = 2, c = 2, d = [1, 1, 1, 1]))
+r = validate_dict(C, dict(a=2, b=2, c=2, d=[1, 1, 1, 1]))
 assert {str(p) for p, _ in r.failures} == {}
 ```
 
@@ -319,9 +323,9 @@ This decorator takes keyword arguments which represent dependencies determining 
 
 ```
 class C:
-    a: +v(int)
-    b: +v(int)
-    c: +v(int)
+    a: int = +v()
+    b: int = +v()
+    c: int = +v()
 
     @validate()
     def v1(self):
@@ -335,14 +339,14 @@ class C:
     def v3(self):
         return self.a > 0
 
-r = validate_dict(C, dict(a = "0", b = "0", c = "0"))
+r = validate_dict(C, dict(a="0", b="0", c="0"))
 assert {str(p) for p, _ in r.failures} == {"v1", "v2", "v3"}
 
-r = validate_dict(C, dict(a = "0", b = "a", c = "a"))
+r = validate_dict(C, dict(a="0", b="a", c="a"))
 assert {str(p) for p, _ in r.failures} == {"b", "c", "v2"}
 assert r.failures["v2"].name == "v2"
 
-r = validate_dict(C, dict(a = "0", b = "0", c = "a"))
+r = validate_dict(C, dict(a="0", b="0", c="a"))
 assert {str(p) for p, _ in r.failures} == {"c", "v2", "v3"}
 assert r.failures["v3"].name == "v3"
 ```
@@ -355,20 +359,18 @@ As shown in the code, an error caused by a verifier method is stored on the path
 
 ### Variable
 
-*experimental*
-
 Verifiers can be declared by any kind of `callable`s such as normal functions and lambda expressions. However, it is sometimes bothersome to define functions explicitly, and, lambda expression of python is somewhat verbose. To make things better in that point, `dhampyr` package exports a variable object `x`.
 
 `x` is a variable which will be replaced with the input value, and various operations applied to it are evaluated lazily in verification phase.
 
 ```
 class C:
-    a: v(int, x > 0)
-    b: v(str, x.len % 2 == 0)
-    c: v(int, x.in_(1, 2, 3))
-    d: v(int, x.not_.in_(1, 2, 3))
+    a: int = v(..., x > 0)
+    b: str = v(..., x.len % 2 == 0)
+    c: int = v(..., x.in_(1, 2, 3))
+    d: int = v(..., x.not_.in_(1, 2, 3))
 
-r = validate_dict(C, dict(a = 0, b = "abc", c = 0, d = 1))
+r = validate_dict(C, dict(a=0, b="abc", c=0, d=1))
 
 assert r.failures["a"].name == "x.gt"
 assert r.failures["a"].kwargs == {"gt.value": 0}
@@ -453,176 +455,79 @@ Because this feature is added for the purpose of simplicity and intuitivity, it 
 
 ### Validation context
 
-`validate_dict` takes `ValidationContext` at the optional third argument. Functionalities of this object are listed below.
+`validate_dict` takes `ValidationContext` optionally. Features of this object are listed below.
 
-- Stores object on its attributes of arbitrary names.
-- Stores key-value pairs in input dictionary to which validation schemes are not applied.
+- Arbitrary values can be set to its attributes and they are available in conversion or verification function.
+- Keeps key-value pairs which exist in the input but are not used in the validation scheme.
 - Provides an interface to modify configurations which are effective under certain path.
 
-Here describes the overview of `ValidationContext` and the first functionality as others are described in following sections.
-
-`ValidationContext` instance is created at every path where `Validator` works, that is, root, each key of dictionary, each index of iterable value and each nested type. The instances make hierarchical structure providing bracket access like error object. Features of the context are:
-
-- Descendant context is created when it is accessed even before validation.
-- Each context refers parent context and inherits its attributes spontaneously.
-- Settings of a context affect validations only on its path and descendant paths.
+First of all, `ValidationContext` is the object used at each validation path. The state of the context can be set independently beforehand and the state propagates to descendant paths. Next example show how it works.
 
 ```
 context = ValidationContext()
 
-context["a"].put(value = 1)
-context["b"].put(value = 2)
-context["a"][0].put(value = 3)
+context["a"].put(value=1)
+context["b"].put(value=2)
+context["a"][0].put(value=3)
 
-def lt(x, cxt:ValidationContext):
+def gt(x, cxt:ValidationContext):
     return x > cxt.value
 
 class C:
-    a: v([int], [lt])
-    b: v(int, lt)
+    a: list[int] = v(..., [gt])
+    b: int = v(..., gt)
 
-r = validate_dict(C, dict(a = ["2", "2"], b = "2"), context)
+r = validate_dict(C, dict(a=["2", "2"], b="2"), context)
 
 assert {str(p) for p, _ in r.failures} == {"a[0]", "b"}
 ```
 
-In above code, every value is verified the same function `lt` but the attribute `value` of context is set to different each other on every path. `put` is the method which sets values to attributes, where each pair of keyword arguments corresponds the name and value of an attribute. As a result, `a[0]` compares input value to `3` which is explicitly set to the path whereas `a[1]` uses `1` which is inherited from setting on `a`.
+- Each value for `a` is verified by `gt` which checks the input is greater than `cxt.value` which is set to `1` by `put` .
+- Only the first item in `a` fails because `cxt.value` at `a[0]` is set to `3` .
+- As for `b` , verification fails because `cxt.value` is `2` .
 
 In order to use the context object in `Verifier` function, it should be declared to have an argument which is annotated with `ValidationContext` like `lt`. Context object is given only when the signature satisfies the format, which is the same for `Conterter` function as well. Because the context is created on every path, the argument is always not `None` but the access to unset attribute raises `AttributeError`.
 
 ### Undeclared keys
 
-`validate_dict` just ignores items in input dictionary whose keys are not declared on the validatable type. Instead, they remain at `remainders` attribute of `ValidationContext`, which can be accessed via `context` attribute of returned value even if you don't give a context explicitly. To get the undeclared values in nested types, use hierarchical access to the context.
+`validate_dict` just ignores items in input dictionary whose keys are not declared on the validatable type. Instead, they are kept in `remainders` of `ValidationContext` after the validation. The context can be obtained from `ValidationResult` via `context` attribute even if you don't give a context explicitly. To get the undeclared values in nested types, use hierarchical access to the context.
 
 ```
 class D:
-    d: v(int) = 0
+    d: int = v(default=0)
 
 class C:
-    a: v(int) = 0
-    b: v({D}) = None
-    c: v([{D}]) = []
+    a: int = v(default=0) = 0
+    b: Optional[D] = v(default=None)
+    c: list[D] = v(default_factory=list)
 
-r = validate_dict(C, dict(a = "1", b = dict(d = "2", e = "a"), c = [dict(d = "3", e1 = "b"), dict(d = "4", e2 = "c")], d = "d"))
+r = validate_dict(C, dict(a="1", b=dict(d="2", e="a"), c=[dict(d="3", e1="b"), dict(d="4", e2="c")], d="d"))
 cxt = r.context
 
-assert cxt.remainders == dict(d = "d")
-assert cxt["b"].remainders == dict(e = "a")
-assert cxt["c"][0].remainders == dict(e1 = "b")
-assert cxt["c"][1].remainders == dict(e2 = "c")
+assert cxt.remainders == dict(d="d")
+assert cxt["b"].remainders == dict(e="a")
+assert cxt["c"][0].remainders == dict(e1="b")
+assert cxt["c"][1].remainders == dict(e2="c")
 ```
 
 ### Configurations
 
-There are some configuration options which control the behavior of validations. Next list shows 3 kinds of configuration styles, where the former one has always higher priority.
+There are some configuration options which control the behavior of validations. Global configuration can be obtained by `default_config` . Meanwhile, configuration used at each path can be set via `configure` of `ValidationContext` .
 
-- Runtime configurations in `ValidationContext` set by `configure` method.
-    - Similar to context attributes, configurations are inheited as well.
-- Static configurations on the validatable type declared by `dhampyr` decorator.
-    - When nested, the validation of child type is affected by configurations declared on enclosing type.
-- Global default configurations which can be modified by `dhampyr` function.
+Due to the configuration object is also a context manager, it can be changed locally by using *with* block.
 
 At runtime, `config` attribute of `ValidationContext` exposes configurations effective on the path.
 
 ```
-with dhampyr() as cfg:
-    cfg.name = "global"
-    cfg.join_on_fail = False
+with default_config() as cfg:
+    cfg.name = "modified"
+    cfg.skip_null = False
 
-def add_name(x, cxt:ValidationContext):
-    return f"{x}.{cxt.config.name}"
+    assert default_config().name is "modified"
+    assert default_config().skip_null is False
 
-@dhampyr(name="static", join_on_fail=False)
-class D:
-    a: v(add_name)
-
-class C:
-    a: v(add_name)
-    b: v({D})
-    c: v(add_name)
-
-context = ValidationContext()
-context["c"].configure(name="runtime", join_on_fail=False)
-
-d = validate_dict(C, dict(a = "a", b = dict(a = "b"), c = "c"), context).get()
-
-assert d.a == "a.global"
-assert d.b.a == "b.static"
-assert d.c == "c.runtime"
+assert default_config().name is "default"
+assert default_config().skip_null is True
 ```
 
-Available configuration parameters are listed below:
-
-- `name`
-    - type: `str`
-    - default: `"default"`
-    - description:
-        - The name of this configuration.
-        - This configuration has no effect on validation. Use for debugging purpose etc.
-
-- `key_filter`
-    - type: `str -> str`
-    - default: `None`
-    - description:
-        - A function which maps attribute names in validatable type to keys of input dictionary.
-        - The function is applied even when the key is specified explicitly by `key` argument of `v`.
-
-- `skip_null` / `skip_empty`
-    - type: `bool`
-    - default: `True`
-    - phase: Requirement
-    - description:
-        - Determines whether `v` validator (no `+`) skips subsequent phases when the input value is `None` or *empty value*.
-
-- `allow_null` / `allow_empty`
-    - type: `bool`
-    - default: `False`
-    - phase: Requirement
-    - description:
-        - Determines whether `+v` validator skips subsequent phases when the input value is `None` or *empty value*.
-
-- `empty_specs`
-    - type: `[(type[T], (T) -> bool)]`
-    - default: `[]`
-    - phase: Requirement
-    - description:
-        - List of pairs composed of a type and a function, where the function takes a value of the type and returns whether it is *empty* or not.
-        - The function is invoked when the input value is an instance of the paired type.
-
-- `isinstance_builtin` / `isinstance_any`
-    - type: `bool`
-    - default: `False`
-    - phase: Conversion
-    - description:
-        - This configuration has effect on `Converter`s declared by type constructor (`int`, `float` etc).
-        - If `True`, `Converter` checks the type of input value and returns it as it is if it is an instance of the type, otherwise fails.
-        - `_builtin` works only for builtin types, whereas `_any` works for any type.
-
-- `join_on_fail`
-    - type: `bool`
-    - default: `True`
-    - phase: Conversion, Verification
-    - description:
-        - Determines what is assigned to the iterable attribute when the validation on it fails.
-        - If `True`, `None` is assigned even when validations to some items succeeds.
-        - Otherwise, a list is assigned which contains successfully validated values and `None`s on failed index.
-
-- `ignore_remainders`
-    - type: `bool`
-    - default: `False`
-    - description:
-        - Determines whether undeclared keys are simply ignored and discarded.
-        - If `True`, `remainders` attribute is always empty dictionary.
-
-- `share_context`
-    - type: `bool`
-    - default: `False`
-    - description:
-        - If `True`, validation context is never created newly, that is, an instance is shared at every path.
-        - Also, `remainders` takes hierarchical form equivalent to the structure of nested validatable types.
-
-## Multidict support
-
-This library supports `werkzeug.datastructures.MultiDict` which is used in [Flask](http://flask.pocoo.org/docs/1.0/) to store request forms and queries. In addition to `dict`, the instance of `MultiDict` can be an input of `Validator`.
-
-In many web application frameworks, although form values and queries can associate multiple values with a single key, the request object tends to return a single value when accessed as a dictionary. To solve this difference between `dict` and request object, this library first checks the input is `MultiDict` or not and changes accessors according to the type of the input. Thus, you can give `request.form`, `request.args` and any other `MultiDict` values to `validate_dict`.
+See the documentation of `ValidationConfiguration` to know all possible configurable parameters.
