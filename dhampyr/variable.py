@@ -54,37 +54,37 @@ class Variable:
         self._kwargs = kwargs or {}
         self._not = not_
 
-    def _sync(self, f, name, **kwargs) -> Self:
+    def _sync(self, f, name, **kwargs) -> 'Variable':
         kw = {f"{name}.{k}":v for k, v in kwargs.items()}
         return Variable(lambda x: f(self._id(x)), self._names+[name], dict(self._kwargs, **kw), self._not)
 
     @property
-    def len(self) -> Self:
+    def len(self) -> 'Variable':
         return self._sync(lambda x: len(x), 'len')
 
-    def in_(self, *v) -> Self:
+    def in_(self, *v) -> 'Variable':
         return self._sync(lambda x: x in v, 'in', value=v)
 
-    def has(self, v) -> Self:
+    def has(self, v) -> 'Variable':
         return self._sync(lambda x: v in x, 'has', value=v)
 
-    def inv(self) -> Self:
+    def inv(self) -> 'Variable':
         return self._sync(lambda x: not x, 'inv')
 
-    def and_(self, other: Self) -> Self:
+    def and_(self, other: Self) -> 'Variable':
         return Variable(
             lambda x: bool(self._id(x)) and bool(other._id(x)),
             self._names + ['and'] + other._names[1:],
         )
 
-    def or_(self, other: Self) -> Self:
+    def or_(self, other: Self) -> 'Variable':
         return Variable(
             lambda x: bool(self._id(x)) or bool(other._id(x)),
             self._names + ['or'] + other._names[1:],
         )
 
     @property
-    def not_(self) -> Self:
+    def not_(self) -> 'Variable':
         return Variable(self._id, self._names, self._kwargs, True)
 
     def _verifier(self, is_iter: bool):
@@ -106,91 +106,91 @@ class Variable:
         else:
             return self._sync(lambda x: getattr(x, key), f'@{key}')
 
-    def __getitem__(self, key) -> Self:
+    def __getitem__(self, key) -> 'Variable':
         return self._sync(lambda x: x[key], f'[{key}]')
 
-    def __eq__(self, v) -> Self:
+    def __eq__(self, v) -> 'Variable':
         return self._sync(lambda x: x == v, 'eq', value=v)
 
-    def __ne__(self, v) -> Self:
+    def __ne__(self, v) -> 'Variable':
         return self._sync(lambda x: x != v, 'ne', value=v)
 
-    def __lt__(self, th) -> Self:
+    def __lt__(self, th) -> 'Variable':
         return self._sync(lambda x: x < th, 'lt', value=th)
 
-    def __le__(self, th) -> Self:
+    def __le__(self, th) -> 'Variable':
         return self._sync(lambda x: x <= th, 'le', value=th)
 
-    def __gt__(self, th) -> Self:
+    def __gt__(self, th) -> 'Variable':
         return self._sync(lambda x: x > th, 'gt', value=th)
 
-    def __ge__(self, th) -> Self:
+    def __ge__(self, th) -> 'Variable':
         return self._sync(lambda x: x >= th, 'ge', value=th)
 
-    def __add__(self, v) -> Self:
+    def __add__(self, v) -> 'Variable':
         return self._sync(lambda x: x + v, 'add', value=v)
 
-    def __sub__(self, v) -> Self:
+    def __sub__(self, v) -> 'Variable':
         return self._sync(lambda x: x - v, 'sub', value=v)
 
-    def __mul__(self, v) -> Self:
+    def __mul__(self, v) -> 'Variable':
         return self._sync(lambda x: x * v, 'mul', value=v)
 
-    def __matmul__(self, v) -> Self:
+    def __matmul__(self, v) -> 'Variable':
         return self._sync(lambda x: x @ v, 'matmul', value=v)
 
-    def __truediv__(self, v) -> Self:
+    def __truediv__(self, v) -> 'Variable':
         return self._sync(lambda x: x / v, 'truediv', value=v)
 
-    def __floordiv__(self, v) -> Self:
+    def __floordiv__(self, v) -> 'Variable':
         return self._sync(lambda x: x // v, 'floordiv', value=v)
 
-    def __mod__(self, v) -> Self:
+    def __mod__(self, v) -> 'Variable':
         return self._sync(lambda x: x % v, 'mod', value=v)
 
-    def __divmod__(self, v) -> Self:
+    def __divmod__(self, v) -> 'Variable':
         return self._sync(lambda x: divmod(x, v), 'divmod', value=v)
 
-    def __pow__(self, v) -> Self:
+    def __pow__(self, v) -> 'Variable':
         return self._sync(lambda x: pow(x, v), 'pow', value=v)
 
-    def __lshift__(self, v) -> Self:
+    def __lshift__(self, v) -> 'Variable':
         return self._sync(lambda x: x << v, 'lshift', value=v)
 
-    def __rshift__(self, v) -> Self:
+    def __rshift__(self, v) -> 'Variable':
         return self._sync(lambda x: x >> v, 'rshift', value=v)
 
-    def __and__(self, v) -> Self:
+    def __and__(self, v) -> 'Variable':
         return self._sync(lambda x: x & v, 'and', value=v)
 
-    def __xor__(self, v) -> Self:
+    def __xor__(self, v) -> 'Variable':
         return self._sync(lambda x: x ^ v, 'xor', value=v)
 
-    def __or__(self, v) -> Self:
+    def __or__(self, v) -> 'Variable':
         return self._sync(lambda x: x | v, 'or', value=v)
 
-    def __neg__(self) -> Self:
+    def __neg__(self) -> 'Variable':
         return self._sync(lambda x: -x, 'neg')
 
-    def __pos__(self) -> Self:
+    def __pos__(self) -> 'Variable':
         return self._sync(lambda x: +x, 'pos')
 
-    def __abs__(self) -> Self:
+    def __abs__(self) -> 'Variable':
         return self._sync(lambda x: abs(x), 'abs')
 
-    def __invert__(self) -> Self:
+    def __invert__(self) -> 'Variable':
         return self._sync(lambda x: ~x, 'invert')
 
-    def __round__(self) -> Self:
+    def __round__(self) -> 'Variable':
         return self._sync(lambda x: round(x), 'round')
 
-    def __trunc__(self) -> Self:
+    def __trunc__(self) -> 'Variable':
         return self._sync(lambda x: math.trunc(x), 'trunc')
 
-    def __floor__(self) -> Self:
+    def __floor__(self) -> 'Variable':
         return self._sync(lambda x: math.floor(x), 'floor')
 
-    def __ceil__(self) -> Self:
+    def __ceil__(self) -> 'Variable':
         return self._sync(lambda x: math.ceil(x), 'ceil')
 
 

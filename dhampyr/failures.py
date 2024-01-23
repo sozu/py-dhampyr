@@ -107,7 +107,7 @@ class ValidationPath:
     def __repr__(self) -> str:
         return at(self.path)
 
-    def __add__(self, other: Union[str, int, Self, None]) -> Self:
+    def __add__(self, other: Union[str, int, Self, None]) -> 'ValidationPath':
         """
         Creates new path by appending another path or a path segment to this path.
         """
@@ -156,7 +156,7 @@ class ValidationPath:
         return len(self.path) >= len(other.path) and all([s == o for s, o in zip(self.path, other.path)])
 
     @classmethod
-    def of(cls, path: str) -> Self:
+    def of(cls, path: str) -> 'ValidationPath':
         """
         Create an instance of this class by textual representation of a path.
 
@@ -236,6 +236,21 @@ class CompositeValidationFailure(ValidationFailure):
         """
         return f"{len(self.failures)} validation failures arised."
 
+    def as_input(self, key: str) -> str:
+        """
+        Converts a key to the key in input dictionary.
+
+        Args:
+            key: A key.
+        Returns:
+            Converted key.
+        """
+        return self._actual_key(key)
+
+    @overload
+    def _actual_key(self, key: str) -> str: ...
+    @overload
+    def _actual_key(self, key: int) -> int: ...
     def _actual_key(self, key: Union[str, int]) -> Union[str, int]:
         if isinstance(key, str):
             return self.actual_keys.get(key, key)
@@ -298,7 +313,7 @@ class CompositeValidationFailure(ValidationFailure):
             return key in self.failures
 
     @overload
-    def add(self, key: str, f: ValidationFailure, actual_key: Optional[str]): ...
+    def add(self, key: str, f: ValidationFailure, actual_key: Optional[str] = None): ...
     @overload
     def add(self, key: int, f: ValidationFailure, actual_key: None = None): ...
     def add(self, key: Union[str, int], f: ValidationFailure, actual_key: Optional[str] = None):

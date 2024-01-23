@@ -44,6 +44,9 @@ __all__ = [
 class ValidationResult(Generic[T]):
     """
     The result of a validation suite.
+
+    Args:
+        T: Type of the validated object.
     """
     def __init__(self, validated: Optional[T], failures: ValidationFailure, context: ValidationContext):
         #: Validation result.
@@ -75,6 +78,8 @@ class ValidationResult(Generic[T]):
         Args:
             handler: A function which takes validation failures.
             allows: A list of validation paths. When all failures are located under them, `handler` is not invoked even if the validation failed.
+        Returns:
+            An instance created by the suite if the validation succeeded, otherwise the result of `handler`.
         """
         if len(self.failures) == 0:
             return cast(T, self.validated)
@@ -90,8 +95,8 @@ class Validator:
 
     Validation can be devided into 3 phases each of which corresponds to an attribute of `Validator` object.
 
-    Requirements phase
-    -------------------
+    **Requirements phase**
+
     This phase checks whether the input object *exists* or not.
     Prepending `+` operator makes validator fail when the input object does not exist.
 
@@ -121,13 +126,13 @@ class Validator:
         v4: Any = +v(lambda x: x or 0) / None
     ```
 
-    Conversion phase
-    ----------------
+    **Conversion phase**
+
     This phase converts the input value into another object by a `Converter`.
     Validator must contain only one conversion phase.
 
-    Verification phase
-    ------------------
+    **Verification phase**
+
     This phase verifies converted object by a sequence of `Verifier`s.
     Validator can have 0 or multiple verification phases.
     """
@@ -188,7 +193,7 @@ class Validator:
         return self.requirement.requires
 
     @property
-    def accept_list(self):
+    def accept_list(self) -> bool:
         """
         Returns whether this validator accepts an input value as a list.
         """
@@ -196,9 +201,7 @@ class Validator:
 
     def validate(self, value: Any, context: Optional[ValidationContext] = None) -> tuple[Any, Optional[ValidationFailure], bool]:
         """
-        Validate a value.
-
-        Returns a tuple of values where the validated value locate at the first and failure at the second.
+        Validates a value.
 
         Args:
             value: An input value.
@@ -242,7 +245,9 @@ class Validator:
 
 class ValidatorFactory:
     """
-    Factory class to geenrate a `Validator` for passed context.
+    Factory class to generate a `Validator` for passed context.
+
+    Operators available for `Validator` are also available for this class and they modify the `Validator` to create.
     """
     def __init__(
         self,
@@ -285,4 +290,12 @@ class ValidatorFactory:
         return self
 
     def create(self, cxt: ValidationContext) -> Validator:
+        """
+        Createsa a `Validator` working on the passed context.
+
+        Args:
+            cxt: A context object.
+        Returns:
+            Created `Validator` .
+        """
         return self.operations(Validator(self.converter.create(cxt), self.verifiers, key=self.alias))

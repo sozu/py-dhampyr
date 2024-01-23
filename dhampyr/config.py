@@ -60,7 +60,7 @@ class ValidationConfiguration:
     share_context: bool = False
     """If true, `ValidationContext` is shared in an invocation of `validate_dict()`."""
 
-    def _copy_to(self, other: Self, **kwargs: Any):
+    def _copy_to(self, other: 'ValidationConfiguration', **kwargs: Any):
         for f in fields(self):
             val = kwargs[f.name] if f.name in kwargs else deepcopy(getattr(self, f.name))
             setattr(other, f.name, val)
@@ -71,7 +71,7 @@ class ValidationConfiguration:
         if len(invalid) > 0:
             raise KeyError(f"Invalid configuration keys are found: {', '.join(invalid)}")
 
-    def derive(self, **settings: Unpack[Configurable]) -> Self:
+    def derive(self, **settings: Unpack[Configurable]) -> 'ValidationConfiguration':
         """
         Creates new configuration instance deriving this configuration.
 
@@ -90,7 +90,7 @@ class ValidationConfiguration:
         for k, v in settings.items():
             setattr(self, k, v)
 
-    def __enter__(self) -> Self:
+    def __enter__(self) -> 'ValidationConfiguration':
         derived = self.derive()
         return derived
 
@@ -104,7 +104,7 @@ def contextualConfiguration(
 ) -> ValidationConfiguration:
     @dataclass
     class contextual(ValidationConfiguration):
-        def __enter__(self) -> Self:
+        def __enter__(self) -> 'ValidationConfiguration':
             derived = contextual()
             self._copy_to(derived)
             config_var().set(derived)
@@ -132,12 +132,12 @@ def default_config() -> ValidationConfiguration:
     The object works as a context manager by `with` block where another object can be used as global configuration.
 
     ```python
-    >>> with default_config() as cfg:
-    >>>     # Updates to cfg are reflected to global configurations.
-    >>>     cfg.name = "another"
-    >>>     assert default_config().name == "another"
-    >>> # Updates inside with block is no longer valid.
-    >>> assert default_config().name == "default"
+    with default_config() as cfg:
+        # Updates to cfg are reflected to global configurations.
+        cfg.name = "another"
+        assert default_config().name == "another"
+    # Updates inside with block is no longer valid.
+    assert default_config().name == "default"
     ```
     """
     return config.get()

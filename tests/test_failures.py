@@ -103,3 +103,27 @@ class TestCompositeValidationFailure:
         assert ('b.d' in f) is True
         assert ('b.e' in f) is False
         assert ('c[0]' in f) is False
+
+
+class TestActualKeys:
+    def test_iter(self):
+        f = CompositeValidationFailure()
+
+        a1 = CompositeValidationFailure()
+        a1.add('A', ValidationFailure("a0A"), None)
+        a2 = CompositeValidationFailure()
+        a2.add('A', ValidationFailure("a1A"), 'aaa')
+
+        a = CompositeValidationFailure()
+        a.add(0, a1)
+        a.add(1, a2)
+
+        b = CompositeValidationFailure()
+        b.add('c', ValidationFailure("bc"), None)
+        b.add('d', ValidationFailure("bd"), 'DDD')
+
+        f.add('a', a)
+        f.add('b', b, 'BBB')
+
+        assert [(str(p), v.name) for p, v in f.__iter__(as_input=True)] \
+            == [('a[0].A', "a0A"), ('a[1].aaa', "a1A"), ('BBB.c', "bc"), ('BBB.DDD', "bd")]
