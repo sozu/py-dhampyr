@@ -10,7 +10,7 @@ This library provides data validation functionalities designed for HTTP applicat
 
 ## Installation
 
-This library requires python 3.6 or higher.
+This library requires python 3.9 or higher.
 
 ```
 $ pip install dhampyr==1.0.0
