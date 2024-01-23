@@ -1,225 +1,235 @@
-from functools import wraps
+from collections.abc import Callable
+from contextvars import ContextVar
+from copy import deepcopy
+from dataclasses import dataclass, fields, field
+from typing import Any, Optional, Union, TypeVar, TypedDict, cast, TYPE_CHECKING
+from typing_extensions import Self, TypeAlias, Unpack, NotRequired
 
 
+T = TypeVar('T')
+
+
+if TYPE_CHECKING:
+    class Configurable(TypedDict):
+        name: NotRequired[str]
+        key_filter: NotRequired[Optional[Callable[[str], str]]]
+        skip_null: NotRequired[bool]
+        skip_empty: NotRequired[bool]
+        allow_null: NotRequired[bool]
+        allow_empty: NotRequired[bool]
+        empty_specs: NotRequired[list[tuple[type, Callable[[type], bool]]]]
+        strict_builtin: NotRequired[bool]
+        strict: NotRequired[bool]
+        implicit_default: NotRequired[bool]
+        join_on_fail: NotRequired[bool]
+        ignore_remainders: NotRequired[bool]
+        share_context: NotRequired[bool]
+else:
+    Configurable: TypeAlias = dict
+
+
+@dataclass
 class ValidationConfiguration:
     """
     Configurations for validation.
-
-    Attributes
-    ----------
-    key_filter: str -> str
-        A function which maps attribute names in validatable type to keys of input dictionary.
-    skip_null: bool
-        If true, validator not prepended by `+` skips when the input is `None`.
-    skip_empty: bool
-        If true, validator not prepended by `+` skips when the input is empty.
-    allow_null: bool
-        If true, `+` prepended validator skips when the input is `None`.
-    allow_empty: bool
-        If true, `+` prepended validator skips when the input is empty.
-    empty_specs: [(type, T -> bool)]
-        Functions to check the value of specific type is empty or not.
-    isinstance_buitin: bool
-        If true, `Converter` declared by builtin type checks that the input is instance of the type instead of applying constructor.
-    isinstance_any: bool
-        If true, `Converter` declared by any type checks that the input is instance of the type instead of applying constructor.
-    join_on_fail: bool
-        If true, failed iterable values are joined into single `None`.
-    ignore_remainders: bool
-        If true, not validated values are simply discarded.
-    share_context: bool
-        If true, `ValidationContext` is shared in an invocation of `validate_dict()`.
     """
-    def __init__(
-        self,
-        name = None,
-        key_filter = None,
-        skip_null = None,
-        skip_empty = None,
-        allow_null = None,
-        allow_empty = None,
-        empty_specs = None,
-        isinstance_builtin = None,
-        isinstance_any = None,
-        join_on_fail = None,
-        ignore_remainders = None,
-        share_context = None,
-    ):
-        self.name = name
-        self.key_filter = key_filter
-        self.skip_null = skip_null
-        self.skip_empty = skip_empty
-        self.allow_null = allow_null
-        self.allow_empty = allow_empty
-        self.empty_specs = empty_specs
-        self.isinstance_builtin = isinstance_builtin
-        self.isinstance_any = isinstance_any
-        self.join_on_fail = join_on_fail
-        self.ignore_remainders = ignore_remainders
-        self.share_context = share_context
+    name: str = "default"
+    """Name of this configuration. This value has no effect on any behavior of modules."""
+    key_filter: Optional[Callable[[str], str]] = None
+    """A function which maps attribute names in validatable type to keys of input dictionary."""
+    skip_null: bool = True
+    """Whether validator skips subsequent phases when the input is `None` if it is not prepeded by `+` and not set `None` handling explicitly."""
+    skip_empty: bool = True
+    """Whether validator skips subsequent phases when the input is empty if it is not prepeded by `+` and not set empty handling explicitly."""
+    allow_null: bool = False
+    """Whether validator skips subsequent phases when the input is `None` if it is not set `None` handling explicitly."""
+    allow_empty: bool = False
+    """Whether validator skips subsequent phases when the input is empty if it is not set empty handling explicitly."""
+    empty_specs: list[tuple[type, Callable[[type], bool]]] = field(default_factory=list)
+    """Functions to check the value of specific type is empty or not."""
+    strict_builtin: bool = False
+    """If true, `Converter` declared by builtin type checks that the input is instance of the type instead of applying constructor."""
+    strict: bool = False
+    """If true, `Converter` declared by any type checks that the input is instance of the type instead of applying constructor."""
+    implicit_default: bool = False
+    """If true, default value or default factory is implicitly set for builtin types and optional types."""
+    join_on_fail: bool = True
+    """If true, failed iterable values are joined into single `None`."""
+    ignore_remainders: bool = False
+    """If true, not validated values are simply discarded."""
+    share_context: bool = False
+    """If true, `ValidationContext` is shared in an invocation of `validate_dict()`."""
 
-    def derive(self, **kwargs):
-        #kwargs.setdefault('empty_specs', [])
-        return DerivingConfiguration(self, **kwargs)
+    def _copy_to(self, other: 'ValidationConfiguration', **kwargs: Any):
+        for f in fields(self):
+            val = kwargs[f.name] if f.name in kwargs else deepcopy(getattr(self, f.name))
+            setattr(other, f.name, val)
+
+    def _check_fields(self, **kwargs: Any):
+        names = {f.name for f in fields(self)}
+        invalid = [k for k in kwargs.keys() if k not in names]
+        if len(invalid) > 0:
+            raise KeyError(f"Invalid configuration keys are found: {', '.join(invalid)}")
+
+    def derive(self, **settings: Unpack[Configurable]) -> 'ValidationConfiguration':
+        """
+        Creates new configuration instance deriving this configuration.
+
+        Args:
+            settings: Configuration parameters which overwrites values in this instance.
+        Returns:
+            Derived configuration object.
+        """
+        self._check_fields(**settings)
+        derived = ValidationConfiguration()
+        self._copy_to(derived, **settings)
+        return derived
+
+    def set(self, **settings: Unpack[Configurable]) -> None:
+        self._check_fields(**settings)
+        for k, v in settings.items():
+            setattr(self, k, v)
+
+    def __enter__(self) -> 'ValidationConfiguration':
+        derived = self.derive()
+        return derived
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        pass
 
 
-class DerivingConfiguration(ValidationConfiguration):
-    def __init__(self, base, **kwargs):
-        super().__init__(**kwargs)
-        self.base = base
+def contextualConfiguration(
+    config_var: Callable[[], ContextVar[ValidationConfiguration]],
+    base: Optional[ValidationConfiguration] = None
+) -> ValidationConfiguration:
+    @dataclass
+    class contextual(ValidationConfiguration):
+        def __enter__(self) -> 'ValidationConfiguration':
+            derived = contextual()
+            self._copy_to(derived)
+            config_var().set(derived)
+            return derived
 
-    def __getattribute__(self, key):
-        value = object.__getattribute__(self, key)
-        return value if value is not None else getattr(self.base, key)
+        def __exit__(self, exc_type, exc_value, traceback):
+            config_var().set(self)
 
-    def set(self, **kwargs):
-        for k, v in kwargs.items():
-            if hasattr(self.base, k):
-                setattr(self, k, v)
-            else:
-                raise KeyError(f"Unknown configuration key: {k}")
-        return self
+    cfg = contextual()
+    if base:
+        base._copy_to(cfg)
+    return cfg
+
+
+config: ContextVar[ValidationConfiguration] = ContextVar('config', default=contextualConfiguration(lambda: config))
+
+
+def default_config() -> ValidationConfiguration:
+    """
+    Returns a global configuration.
+
+    Global configuration is managed in *context* provided by `contextvars` module.
+    Update on the returned object will change the behaviors of library modules globally.
+
+    The object works as a context manager by `with` block where another object can be used as global configuration.
+
+    ```python
+    with default_config() as cfg:
+        # Updates to cfg are reflected to global configurations.
+        cfg.name = "another"
+        assert default_config().name == "another"
+    # Updates inside with block is no longer valid.
+    assert default_config().name == "default"
+    ```
+    """
+    return config.get()
 
 
 class ConfigurationStack:
     """
     Stack of configurations which mocks `ValidationConfiguration`.
     """
-    def __init__(self, base, stack=None):
+    def __init__(self, base: ValidationConfiguration) -> None:
+        #: Base configuration supplying default values.
         self.base = base
-        self.stack = stack or []
+        #: Configuration stack.
+        self.stack: list[Configurable] = [{}]
 
-    def __getattr__(self, key):
+    def __getattr__(self, key: str) -> Any:
+        """
+        Returns configuration of passed key found first in stack.
+        """
         for config in self.stack[::-1]:
-            value = getattr(config, key)
-            if value is not None:
-                return value
-
+            if key in config:
+                return config[key]
         return getattr(self.base, key)
 
-    def __enter__(self):
-        pass
+    def on(self, t: type) -> ValidationConfiguration:
+        """
+        Returns configuration for passed type.
 
-    def __exit__(self, exc_type, exc_value, stacktrace):
-        if self.stack:
-            self.pop()
+        If specific configuration for the type is registered,
+        it is pushed at the top of the stack for later validations in propagated types.
 
-    def on(self, t):
-        config = type_config(t)
+        Args:
+            t: Type to validate.
+        Returns:
+            Configuration for the type.
+        """
+        config = typed_config().get(t)
         if config:
             self.push(config)
-        return self
+        return cast(ValidationConfiguration, self)
 
-    def derive(self, **kwargs):
-        return DerivingConfiguration(self, **kwargs)
+    def derive(self, **settings: Unpack[Configurable]) -> Self:
+        """
+        Creates new configuration instance deriving this configuration.
 
-    def push(self, config):
+        Args:
+            settings: Configuration parameters which overwrites values in this instance.
+        Returns:
+            Derived configuration object.
+        """
+        derived = type(self)(self) # type: ignore
+        derived.push(settings)
+        return derived
+
+    def push(self, config: Configurable) -> Self:
+        """
+        Push a partial configuration values to the stack.
+
+        Args:
+            config: Partial configuration values.
+        Returns:
+            This instance.
+        """
         self.stack.append(config)
         return self
 
-    def pop(self):
-        self.stack.pop()
+    def pop(self) -> Self:
+        """
+        Pop a partial configuration values from the stack.
+
+        Returns:
+            This instance.
+        """
+        if len(self.stack) > 1:
+            self.stack.pop()
         return self
 
 
-def default_config(config=ValidationConfiguration(
-    name = "default",
-    key_filter = None,
-    skip_null = True,
-    skip_empty = True,
-    allow_null = False,
-    allow_empty = False,
-    empty_specs = [],
-    isinstance_builtin = False,
-    isinstance_any = False,
-    join_on_fail = True,
-    ignore_remainders = False,
-    share_context = False,
-)):
+class TypedConfiguration:
+    def __init__(self) -> None:
+        self.holder = {}
+
+    def put(self, t: type, settings: Configurable) -> Self:
+        self.holder[t] = settings
+        return self
+
+    def get(self, t: type) -> Optional[Configurable]:
+        return self.holder.get(t)
+
+    def clear(self):
+        self.holder = {}
+
+
+def typed_config(config: TypedConfiguration = TypedConfiguration()) -> TypedConfiguration:
     return config
-
-
-def type_config(t, config=None, holder={}):
-    if isinstance(config, ValidationConfiguration):
-        holder[t] = config
-    return holder.get(t, None)
-
-
-def dhampyr(**kwargs):
-    """
-    Starts `with` context to modify default configuration or decorates a class to be applied certain configurations.
-
-    When invoked alone, this function returns a context manager object.
-    Updates done to attributes of the object in the context is applied to default configuration when exiting the context.
-
-    >>> with dhampyr() as cfg:
-    >>>     cfg.skip_null = False
-    >>>     cfg.join_on_fail = False
-    >>>     cfg.isinstance_builtin = True
-
-    When used as decorator, validations for decorated class will be done under the given configurations.
-
-    >>> @dhampyr(skip_null=False, join_on_fail=False, isinstance_builtin=True)
-    >>> class V:
-    >>>     v1: v(int)
-    >>>     v2: v([str])
-
-    This function also works as meta decorator which gives another decorator the ability to apply configurations to decorated type.
-
-    >>> @dhampyr(skip_null=False, join_on_fail=False, isinstance_builtin=True)
-    >>> def meta(t):
-    >>>     return t
-    >>>
-    >>> @meta
-    >>> class V:
-    >>>     v1: v(int)
-    >>>     v2: v([str])
-
-    Parameters
-    ----------
-    kwargs: {str:object}
-        Effective only when this function is used as a decorator. Attributes declared in `ValidationConfig` are available.
-    """
-    class Configurable:
-        def __init__(self, **kw):
-            self.kwargs = kw.copy()
-            self.target = None
-            self.config = ValidationConfiguration()
-
-        def __call__(self, arg):
-            if isinstance(arg, type):
-                self.target = ValidationConfiguration(**self.kwargs)
-                #from .validator import Validator
-                #for k, v in [(k, v) for k, v in (arg.__annotations__ or {}).items() if isinstance(v, Validator)]:
-                #    v.config = self.target
-                type_config(arg, self.target)
-                return arg
-            elif callable(arg): 
-                @wraps(arg)
-                def inner(*args, **kw):
-                    decorated = arg(*args, **kw)
-                    if isinstance(decorated, type):
-                        return self(decorated)
-                    else:
-                        # When decorator target is not a type, do nothing.
-                        return decorated
-                return inner
-            else:
-                raise ValueError("The target of @dhampyr decorator must be a type or another decorator function.")
-
-        def __enter__(self):
-            if not self.target:
-                self.target = default_config()
-            return self.config
-
-        def __exit__(self, exc_type, exc_value, traceback):
-            if not exc_value:
-                values = {}
-                for k in vars(self.target):
-                    v = getattr(self.config, k)
-                    if v is not None:
-                        values[k] = v
-                        setattr(self.target, k, v)
-            return False
-
-    return Configurable(**kwargs)

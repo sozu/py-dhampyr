@@ -1,12 +1,13 @@
 import pytest
-from dhampyr.api import v, validate_dict, validate
+from dhampyr.api import v, validate_dict, validate, validatable
 from dhampyr.context import ValidationContext
 
 
 class TestNoDependency:
+    @validatable()
     class V:
-        v1: +v(int)
-        v2: +v(str)
+        v1: int = +v()
+        v2: str = +v()
 
         @validate()
         def ver1(self):

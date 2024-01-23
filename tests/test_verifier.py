@@ -49,6 +49,7 @@ class TestVerify:
             raise ValidationFailure(name="context")
         v = Verifier("test", fail, False)
         f = v.verify("1")
+        assert isinstance(f, ValidationFailure)
         assert f.name == "context"
 
 
@@ -65,13 +66,15 @@ class TestIterativeVerify:
             return v > 0
         v = Verifier("test", ver, True)
         f = v.verify([2, 1, 0])
+        assert isinstance(f, CompositeValidationFailure)
         assert len(f) == 1
-        assert f[2].name == "test"
+        assert f[2].name == "test" # type: ignore
 
     def test_context(self):
         def fail(v, cxt:ValidationContext):
             raise ValidationFailure(name=str(cxt.path))
         v = Verifier("test", fail, True)
         f = v.verify([3, 2, 1], ValidationContext())
+        assert isinstance(f, CompositeValidationFailure)
         assert len(f) == 3
-        assert [f[i].name for i in range(3)] == ["[0]", "[1]", "[2]"]
+        assert [f[i].name for i in range(3)] == ["[0]", "[1]", "[2]"] # type: ignore

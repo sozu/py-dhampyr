@@ -1,13 +1,14 @@
 import pytest
 from enum import Enum, auto
 from functools import partial as p
+from typing import Optional
 from dhampyr import *
 
 
 class TestDeclaration:
     def test_declaration(self):
         class C:
-            a: +v(int, lambda x: x < 5, lambda x: x > 2) = 0
+            a: int = +v(..., lambda x: x < 5, lambda x: x > 2, default=0)
 
         r = validate_dict(C, dict(a = "3"))
         d = r.get()
@@ -19,10 +20,10 @@ class TestDeclaration:
 class TestComposite:
     def test_composite(self):
         class D:
-            a: v(int)
+            a: int = v()
 
         class C:
-            a: v({D})
+            a: D = v()
 
         r = validate_dict(C, dict(a = dict(a = "3")))
         d = r.get()
@@ -33,11 +34,11 @@ class TestComposite:
 
     def test_iterable(self):
         class D:
-            a: v(int)
+            a: int = v()
 
         class C:
-            a: v([int], [lambda x: x > 0])
-            b: v([{D}])
+            a: list[int] = v(..., [lambda x: x > 0])
+            b: list[D] = v()
 
         r = validate_dict(C, dict(a = [1, 2, 3], b = [dict(a = 4), dict(a = 5), dict(a = 6)]))
         d = r.get()
@@ -54,9 +55,9 @@ class TestErrorHandling:
             return x > 1
 
         class C:
-            a: v(int) = 0
-            b: v(int, lt3) = 0
-            c: v(int, lt3, gt1) = 0
+            a: int = v(default=0)
+            b: int = v(..., lt3, default=0)
+            c: int = v(..., lt3, gt1, default=0)
 
         r = validate_dict(C, dict(a = "a", b = "3", c = "1"))
 
@@ -68,10 +69,10 @@ class TestErrorHandling:
 
     def test_composite(self):
         class D:
-            b: v([int]) = []
+            b: list[int] = v(default_factory=lambda: [])
 
         class C:
-            a: v([{D}]) = []
+            a: list[D] = v(default_factory=lambda: [])
 
         r = validate_dict(C, dict(a = [dict(b = "123"), dict(b = "45a"), dict(b = "789")]))
 
@@ -82,7 +83,7 @@ class TestErrorHandling:
 class TestRequirementPhase:
     def test_requirement(self):
         class C:
-            a: +v(int) = 0
+            a: int = +v(default=0)
 
         r = validate_dict(C, dict())
 
@@ -93,10 +94,10 @@ class TestRequirementPhase:
             return len(x) > 5
 
         class C:
-            a: +v(str) = "a"
-            b: +v(str, longer5) ^ None = "b"
-            c: +v(str, longer5) | ... = "c"
-            d: +v(str, longer5) ^ ... = "d"
+            a: str = +v(default="a")
+            b: str = +v(..., longer5, default="b") ^ None
+            c: str = +v(..., longer5, default="c") / ...
+            d: str = +v(..., longer5, default="d") ^ ...
 
         r = validate_dict(C, dict(a = "", b = None, c = "", d = ""))
         d = r.get()
@@ -112,18 +113,18 @@ class TestRequirementPhase:
 class TestConversionPhase:
     def test_conversion(self):
         class D:
-            a: v(int) = 0
+            a: int = v(default=0)
 
         class E(Enum):
             E1 = auto()
             E2 = auto()
 
         class C:
-            a: v(int) = 0
-            b: v(p(int, base=2)) = 0
-            c: v(("first", lambda x: x.split(",")[0])) = None
-            d: v({D}) = None
-            e: v(E) = E.E1
+            a: int = v(int, default=0)
+            b: int = v(p(int, base=2), default=0)
+            c: Optional[int] = v(("first", lambda x: x.split(",")[0]), default=None)
+            d: Optional[D] = v(default=None)
+            e: E = v(E, default=E.E1)
 
         r = validate_dict(C, dict(a = "3", b = "101", c = "a,b,c", d = dict(a = "4"), e = "E2"))
         d = r.get()
@@ -136,8 +137,8 @@ class TestConversionPhase:
 
     def test_iterable(self):
         class C:
-            a: v(int) = 0
-            b: v([int]) = []
+            a: int = v(default=0)
+            b: list[int] = v(default_factory=lambda: [])
 
         r = validate_dict(C, dict(a = "123", b = "123"))
 
@@ -154,10 +155,10 @@ class TestVerificationPhase:
             return x < threshold
 
         class C:
-            a: v(int, lt3) = 0
-            b: v(int, p(lt, threshold = 3))
-            c: v(int, ("less_than_3", lambda x: x < 3)) = 0
-            d: v([int], [lt3], lambda x: len(x) < 5) = []
+            a: int = v(..., lt3, default=0)
+            b: int = v(..., p(lt, threshold = 3))
+            c: int = v(..., ("less_than_3", lambda x: x < 3), default=0)
+            d: list[int] = v(..., [lt3], lambda x: len(x) < 5, default_factory=lambda: [])
 
         r = validate_dict(C, dict(a = 3, b = 3, c = 3, d = [1, 1, 1, 1, 1]))
         assert {str(p) for p, _ in r.failures} == {"a", "b", "c", "d"}
@@ -169,9 +170,9 @@ class TestVerificationPhase:
 class TestVerifierMethod:
     def test_verifier_method(self):
         class C:
-            a: +v(int)
-            b: +v(int)
-            c: +v(int)
+            a: int = +v()
+            b: int = +v()
+            c: int = +v()
 
             @validate()
             def v1(self):
@@ -200,21 +201,23 @@ class TestVerifierMethod:
 class TestVariable:
     def test_variable(self):
         class C:
-            a: v(int, x > 0)
-            b: v(str, x.len % 2 == 0)
-            c: v(int, x.in_(1, 2, 3))
-            d: v(int, x.not_.in_(1, 2, 3))
+            a: int = v(..., x > 0)
+            b: str = v(..., x.len % 2 == 0)
+            c: int = v(..., x.in_(1, 2, 3))
+            d: int = v(..., x.not_.in_(1, 2, 3))
 
         r = validate_dict(C, dict(a = 0, b = "abc", c = 0, d = 1))
 
-        assert r.failures["a"].name == "x.gt"
-        assert r.failures["a"].kwargs == {"gt.value": 0}
-        assert r.failures["b"].name == "x.len.mod.eq"
-        assert r.failures["b"].kwargs == {"mod.value": 2, "eq.value": 0}
-        assert r.failures["c"].name == "x.in"
-        assert r.failures["c"].kwargs == {"in.value": (1, 2, 3)}
-        assert r.failures["d"].name == "x.not.in"
-        assert r.failures["d"].kwargs == {"in.value": (1, 2, 3)}
+        fa, fb, fc, fd = (r.failures[k] for k in ("a", "b", "c", "d"))
+        assert fa and fb and fc and fd
+        assert fa.name == "x.gt"
+        assert fa.kwargs == {"gt.value": 0}
+        assert fb.name == "x.len.mod.eq"
+        assert fb.kwargs == {"mod.value": 2, "eq.value": 0}
+        assert fc.name == "x.in"
+        assert fc.kwargs == {"in.value": (1, 2, 3)}
+        assert fd.name == "x.not.in"
+        assert fd.kwargs == {"in.value": (1, 2, 3)}
 
 
 class TestValidationContext:
@@ -230,8 +233,8 @@ class TestValidationContext:
             return x > cxt.value
 
         class C:
-            a: v([int], [lt])
-            b: v(int, lt)
+            a: list[int] = v(..., [lt])
+            b: int = v(..., lt)
 
         r = validate_dict(C, dict(a = ["2", "2"], b = "2"), context)
 
@@ -241,12 +244,12 @@ class TestValidationContext:
 class TestUndeclaredKeys:
     def test_remainders(self):
         class D:
-            d: v(int) = 0
+            d: int = v(default=0)
 
         class C:
-            a: v(int) = 0
-            b: v({D}) = None
-            c: v([{D}]) = []
+            a: int = v(default=0)
+            b: D = v(default=None)
+            c: list[D] = v(default_factory=lambda: [])
 
         r = validate_dict(C, dict(a = "1", b = dict(d = "2", e = "a"), c = [dict(d = "3", e1 = "b"), dict(d = "4", e2 = "c")], d = "d"))
         cxt = r.context
@@ -259,22 +262,21 @@ class TestUndeclaredKeys:
 
 class TestConfigurations:
     def test_configurations(self):
-        try:
-            with dhampyr() as cfg:
-                cfg.name = "global"
-                cfg.join_on_fail = False
+        with default_config() as cfg:
+            cfg.name = "global"
+            cfg.join_on_fail = False
 
             def add_name(x, cxt:ValidationContext):
                 return f"{x}.{cxt.config.name}"
 
-            @dhampyr(name="static", join_on_fail=False)
+            @validatable(name="static", join_on_fail=False)
             class D:
-                a: v(add_name)
+                a: str = v(add_name)
 
             class C:
-                a: v(add_name)
-                b: v({D})
-                c: v(add_name)
+                a: str = v(add_name)
+                b: D = v(D)
+                c: str = v(add_name)
 
             context = ValidationContext()
             context["c"].configure(name="runtime", join_on_fail=False)
@@ -284,7 +286,3 @@ class TestConfigurations:
             assert d.a == "a.global"
             assert d.b.a == "b.static"
             assert d.c == "c.runtime"
-        finally:
-            with dhampyr() as cfg:
-                cfg.name = "default"
-                cfg.join_on_fail = True
