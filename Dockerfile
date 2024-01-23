@@ -1,4 +1,4 @@
-FROM python:3.7-stretch
+FROM python:3.9-slim
 ENV PYTHONUNBUFFERED 1
 RUN mkdir /home/dhampyr
 RUN apt-get update
