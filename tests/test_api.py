@@ -1,5 +1,5 @@
 import pytest
-from dataclasses import dataclass, MISSING
+from dataclasses import dataclass
 from decimal import Decimal
 from enum import Enum
 from functools import partial
@@ -376,7 +376,7 @@ class TestParseValidators:
             v14: int = v() / None
             v15: int = v() / ...
 
-        vals = parse_validators(V)
+        vals = parse_validators(V).validators
 
         cxt = ValidationContext()
 
@@ -534,3 +534,18 @@ class TestVariable:
         r = validate_dict(C, dict(a=[1, 2, 3]))
         assert bool(validate_dict(C, dict(a=[1, 2, 3])))
         assert not bool(validate_dict(C, dict(a=[0, 1, 2])))
+
+
+class TestByParsed:
+    def test_parsed(self):
+        class C:
+            a: int = v(default=5)
+            b: list[int] = v(default_factory=lambda: [5])
+        pv = parse_validators(C)
+        r = validate_dict(pv, dict())
+        c = r.get()
+        assert c.a == 5 and c.b == [5]
+
+        r = validate_dict(pv, dict(a="3", b=["10", "20"]))
+        c = r.get()
+        assert c.a == 3 and c.b == [10, 20]

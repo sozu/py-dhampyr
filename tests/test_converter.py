@@ -11,13 +11,13 @@ from dhampyr.converter import *
 
 class TestConvert:
     def test_convert(self):
-        c = Converter("test", int, False)
+        c = Converter("test", analyze_callable(int), False)
         v, f = c.convert("1")
         assert v == 1
         assert f is None
 
     def test_exception(self):
-        c = Converter("test", int, False)
+        c = Converter("test", analyze_callable(int), False)
         v, f = c.convert("a")
         assert v is None
         assert isinstance(f, ConversionFailure)
@@ -27,7 +27,7 @@ class TestConvert:
     def test_conversion_failure(self):
         def fail(v):
             ConversionFailure.abort("conversion failed")
-        c = Converter("test", fail, False)
+        c = Converter("test", analyze_callable(fail), False)
         v, f = c.convert("1")
         assert v is None
         assert isinstance(f, ConversionFailure)
@@ -37,7 +37,7 @@ class TestConvert:
     def test_validation_failure(self):
         def fail(v):
             raise ValidationFailure()
-        c = Converter("test", fail, False)
+        c = Converter("test", analyze_callable(fail), False)
         v, f = c.convert("1")
         assert v is None
         assert isinstance(f, ValidationFailure)
@@ -47,7 +47,7 @@ class TestConvert:
     def test_context(self):
         def fail(v, cxt:ValidationContext):
             raise ValidationFailure(name=cxt.name)
-        c = Converter("test", fail, False)
+        c = Converter("test", analyze_callable(fail), False)
         cxt = ValidationContext().put(
             name = "context",
         )
@@ -90,25 +90,25 @@ class TestConvert:
 
 class TestIterativeConvert:
     def test_convert(self):
-        c = Converter("test", int, True)
+        c = Converter("test", analyze_callable(int), True)
         v, f = c.convert(["1", "2", "3"])
         assert v == [1, 2, 3]
         assert f is None
 
     def test_not_iterable(self):
-        c = Converter("test", int, True)
+        c = Converter("test", analyze_callable(int), True)
         with pytest.raises(TypeError):
             c.convert(1)
 
     def test_exception(self):
-        c = Converter("test", int, True)
+        c = Converter("test", analyze_callable(int), True)
         v, f = c.convert(["1", "a", "3"])
         assert v is None
         assert isinstance(f, CompositeValidationFailure)
         assert isinstance(f[1], ConversionFailure)
 
     def test_exception_unjointed(self):
-        c = Converter("test", int, True)
+        c = Converter("test", analyze_callable(int), True)
         cxt = ValidationContext()
         cxt.config.join_on_fail = False
         v, f = c.convert(["1", "a", "3"], cxt)
@@ -119,7 +119,7 @@ class TestIterativeConvert:
     def test_context(self):
         def fail(v, cxt:ValidationContext):
             raise ValidationFailure(name=str(cxt.path))
-        c = Converter("test", fail, True)
+        c = Converter("test", analyze_callable(fail), True)
         v, f = c.convert(["1", "2", "3"], ValidationContext())
         assert v is None
         assert f is not None

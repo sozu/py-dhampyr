@@ -1,7 +1,7 @@
 from collections.abc import Callable, Sequence
 from functools import cached_property, partial
 import inspect
-from typing import Any, TypeVar, Optional, Union, Generic
+from typing import Any, TypeVar, Optional, Union, Generic, NamedTuple, Protocol, cast
 from typing_extensions import Self, Unpack
 from .config import default_config, Configurable, ValidationConfiguration, ConfigurationStack
 from .failures import ValidationPath
@@ -34,8 +34,8 @@ class ValidationContext:
     """
     Represents execution context for a validation suite.
 
-    A context is generated and works for each input which is dictionary-like object.
-    Each key in the object has its own context and the nested validation produces context hierarchy.
+    A context is created for each input and child contexts are also created for keys of the input object.
+    In this way, the context hierarchy is finally built in a tree structure matching the input structure.
 
     The context is available to pass informations to validation logics via its attributes set beforehand by `put()`.
 
@@ -84,17 +84,21 @@ class ValidationContext:
             super().__init__(base)
             self.contextual: Configurable = {}
 
+            # Flag to avoid calling isinstance recursively.
+            self._is_child = isinstance(base, ValidationContext.Stack)
+
         def set(self, settings: Configurable):
             self.contextual.update(settings)
 
         def __getattr__(self, key: str) -> Any:
             if key in self.contextual:
                 return self.contextual[key]
-            base = self.base
-            while isinstance(base, ValidationContext.Stack):
+
+            base: ValidationContext.Stack = self
+            while base._is_child:
                 if key in base.contextual:
                     return base.contextual[key]
-                base = base.base
+                base = cast(ValidationContext.Stack, base.base)
 
             return super().__getattr__(key)
 
@@ -136,7 +140,7 @@ class ValidationContext:
         """
         return key in self._contexts
 
-    def __getitem__(self, key: Union[int, str, tuple[Union[int, str], bool]]) -> Self:
+    def __getitem__(self, key: Union[int, str]) -> Self:
         """
         Returns child context by its key.
 
@@ -145,12 +149,7 @@ class ValidationContext:
         Returns
             Child context. If context does not exist on the key yet, new context is created and returned.
         """
-        # Tuple can be passed only by internal call.
-        key, internal_call = key if isinstance(key, tuple) else (key, False)
-
         if self.config.share_context:
-            if internal_call:
-                self.path += key
             return self
         else:
             return self._contexts.setdefault(key, ValidationContext(self.path + key, parent=self))
@@ -174,6 +173,14 @@ class ValidationContext:
     def __exit__(self, exc_type, exc_value, stacktrace):
         if self.config.share_context and (not self._parent or self._parent.config.share_context):
             self.path.pop()
+
+    def child(self, key: Union[int, str], insternal_call: bool) -> Self:
+        if self.config.share_context:
+            if insternal_call:
+                self.path += key
+            return self
+        else:
+            return self[key]
 
     def on(self, t: type) -> ValidationConfiguration:
         """
@@ -224,17 +231,38 @@ class ValidationContext:
         return self
 
 
+class IParameter(Protocol):
+    @property
+    def name(self) -> str:
+        ...
+    @property
+    def kind(self) -> inspect._ParameterKind:
+        ...
+
+
+class Parameter(NamedTuple):
+    name: str
+    kind: inspect._ParameterKind
+
+
 class ContextualCallable(Generic[T, V]):
     def __init__(
         self,
         func: Callable,
-        param: inspect.Parameter,
-        context_params: Sequence[inspect.Parameter],
+        param: IParameter,
+        context_params: Sequence[IParameter],
     ) -> None:
         self.func = func
-        self.signature = _signature(func)
         self.param = param
         self.context_params = context_params
+        self._signature: Optional[inspect.Signature] = None
+        self._default_arguments: Optional[inspect.BoundArguments] = None
+
+    @cached_property
+    def signature(self) -> inspect.Signature:
+        if self._signature is None:
+            self._signature = _signature(self.func)
+        return self._signature
 
     @cached_property
     def in_type(self) -> Any:
@@ -246,9 +274,14 @@ class ContextualCallable(Generic[T, V]):
         args = get_self_args(self)
         return args[1] if len(args) > 0 else Any
 
+    def bind_arguments(self) -> inspect.BoundArguments:
+        if self._default_arguments is None:
+            self._default_arguments = self.signature.bind_partial()
+            self._default_arguments.apply_defaults()
+        return inspect.BoundArguments(self.signature, self._default_arguments.arguments.copy())
+
     def __call__(self, value: T, context: ValidationContext) -> V:
-        ba = self.signature.bind_partial()
-        ba.apply_defaults()
+        ba = self.bind_arguments()
 
         if self.param.kind is inspect.Parameter.VAR_POSITIONAL:
             var_args = list(ba.arguments.get(self.param.name, []))
@@ -264,7 +297,7 @@ class ContextualCallable(Generic[T, V]):
 
 def analyze_callable(func: Callable) -> ContextualCallable:
     """
-    Analyzes a callable into the objects designed for the invocation in convertion / verification phase.
+    Analyzes a callable into the objects designed for the invocation in conversion / verification phase.
 
     `func` is a callable which has at least an argument for the input value.
     Optionally, it can have one more argument for `ValidationContext` which must be annotated with the type.
@@ -274,6 +307,9 @@ def analyze_callable(func: Callable) -> ContextualCallable:
     Returns:
         Wrapper of passed callable.
     """
+    if isinstance(func, ContextualCallable):
+        return func
+
     sig = _signature(func)
 
     no_context = sig.replace(parameters=[p for p in sig.parameters.values() if p.annotation != ValidationContext])
@@ -297,13 +333,13 @@ def analyze_callable(func: Callable) -> ContextualCallable:
         raise TypeError(f"Arguments of the callable are not fulfilled by preset arguments: {[p.name for p in value_cands]}")
 
     # Find arguments for context.
-    context_params = [p for p in sig.parameters.values() if p.name not in no_context.parameters]
+    context_params = [Parameter(p.name, p.kind) for p in sig.parameters.values() if p.name not in no_context.parameters]
 
     in_type = input_param.annotation if input_param.annotation != inspect.Signature.empty else Any
     out_type = sig.return_annotation if sig.return_annotation != inspect.Signature.empty else Any
 
     # TypeError will raise when arguments don't match.
-    return ContextualCallable[in_type, out_type](func, input_param, context_params)
+    return ContextualCallable[in_type, out_type](func, Parameter(input_param.name, input_param.kind), context_params)
 
 
 def _signature(func) -> inspect.Signature:

@@ -1,7 +1,7 @@
 import pytest
 from functools import partial as p
 from dhampyr.config import typed_config
-from dhampyr.context import ValidationContext, analyze_callable
+from dhampyr.context import ValidationContext, ContextualCallable, analyze_callable
 from dhampyr.api import validatable
 
 

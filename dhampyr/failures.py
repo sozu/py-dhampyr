@@ -1,4 +1,4 @@
-from collections.abc import Generator, Iterator, Callable
+from collections.abc import Generator, Iterator, Callable, Iterable
 import re
 from functools import partial
 from itertools import chain
@@ -113,12 +113,15 @@ class ValidationPath:
         """
         if other == "" or other is None:
             return ValidationPath(self.path)
-        elif isinstance(other, int):
-            return ValidationPath(self.path + [other])
-        elif isinstance(other, str):
-            return self + ValidationPath.of(other)
-        elif isinstance(other, ValidationPath):
-            return ValidationPath(self.path + other.path)
+
+        # Use type comparison insterad of isinstance for performance reason
+        t = type(other)
+        if t is int:
+            return ValidationPath(self.path + [other]) # type: ignore
+        elif t is str:
+            return self + ValidationPath.of(other) # type: ignore
+        elif t is ValidationPath:
+            return ValidationPath(self.path + other.path) # type: ignore
         else:
             raise ValueError(f"Unsupported operand type(s) for +: 'ValidationPath' and '{type(other)}'")
 
@@ -127,15 +130,19 @@ class ValidationPath:
         Append another path or a path segment to this path.
         """
         if other == "" or other is None:
-            pass
-        elif isinstance(other, int):
-            self.path.append(other)
-        elif isinstance(other, str):
-            self += ValidationPath.of(other)
-        elif isinstance(other, ValidationPath):
-            self.path += other.path
+            return self
+
+        # Use type comparison insterad of isinstance for performance reason
+        t = type(other)
+        if t is int:
+            self.path.append(other) # type: ignore
+        elif t is str:
+            self.path.extend(ValidationPath.of(other).path) # type: ignore
+        elif t is ValidationPath:
+            self.path.extend(other.path) # type: ignore
         else:
             raise ValueError(f"Unsupported operand type(s) for +: 'ValidationPath' and '{type(other)}'")
+
         return self
 
     def pop(self):
@@ -164,17 +171,17 @@ class ValidationPath:
             path: Textual representation of a path.
         """
         items = path.split(".")
-        def parse_index(s):
-            m = ValidationPath.PATH_ITEM_REGEXP.match(s)
-            if not m:
-                raise ValueError(f"'{path}' is not valid validation path.")
-            key = m.group(1)
-            indexes = m.group(2)
-            if indexes:
-                return chain([key] if key else [], map(int, indexes[1:-1].split("][")))
-            else:
-                return [key] if key else []
-        return ValidationPath(list(chain(*map(parse_index, items), [])))
+
+        return ValidationPath([s for i in items for s in _parse(path, i)])
+
+
+def _parse(path: str, s: str) -> list[Union[str, int]]:
+    m = ValidationPath.PATH_ITEM_REGEXP.match(s)
+    if not m:
+        raise ValueError(f"'{path}' is not valid validation path.")
+    key = m.group(1)
+    indexes = m.group(2)
+    return ([key] if key else []) + ([int(i) for i in indexes[1:-1].split("][")] if indexes else [])
 
 
 def at(positions):

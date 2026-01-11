@@ -211,36 +211,39 @@ class Validator:
         """
         context = context or ValidationContext.default()
 
-        def fail_or(v, f, b):
-            return v, None if self.silent else f, b
+        #def fail_or(v, f, b):
+        #    return v, None if self.silent else f, b
 
-        def exec():
-            join_on_fail = context.config.join_on_fail
+        v, f, b = _execute(context, self, value)
 
-            failure, to_continue = self.requirement.validate(value, context)
+        return v, None if self.silent else f, b
 
-            if not to_continue:
-                return None, failure, True
 
-            val, failure = self.converter.convert(value, context)
+def _execute(context: ValidationContext, validator: Validator, value: Any):
+    join_on_fail = context.config.join_on_fail
 
-            if failure:
-                if not join_on_fail and self.converter.is_iter:
-                    return val, failure, False
-                else:
-                    return None, failure, True
+    failure, to_continue = validator.requirement.validate(value, context)
 
-            for verifier in self.verifiers:
-                f = verifier.verify(val, context)
-                if f is not None:
-                    if not join_on_fail and verifier.is_iter:
-                        return [None if (i in f) else v for i, v in enumerate(val)], f, False # type: ignore
-                    else:
-                        return None, f, True
+    if not to_continue:
+        return None, failure, True
 
-            return val, None, False
+    val, failure = validator.converter.convert(value, context)
 
-        return fail_or(*exec())
+    if failure:
+        if not join_on_fail and validator.converter.is_iter:
+            return val, failure, False
+        else:
+            return None, failure, True
+
+    for verifier in validator.verifiers:
+        f = verifier.verify(val, context)
+        if f is not None:
+            if not join_on_fail and verifier.is_iter:
+                return [None if (i in f) else v for i, v in enumerate(val)], f, False # type: ignore
+            else:
+                return None, f, True
+
+    return val, None, False
 
 
 class ValidatorFactory:

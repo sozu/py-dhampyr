@@ -97,7 +97,7 @@ class Requirement:
         """
         context = context or ValidationContext.default()
 
-        if value == VALUE_MISSING:
+        if value is VALUE_MISSING:
             return self.missing(lambda: MissingFailure(), False, False)
         elif value is None:
             return self.null(

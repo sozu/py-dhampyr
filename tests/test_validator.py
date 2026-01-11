@@ -1,6 +1,6 @@
 import pytest
 from dhampyr.requirement import RequirementPolicy, VALUE_MISSING, MissingFailure, NullFailure, EmptyFailure
-from dhampyr.context import ValidationContext
+from dhampyr.context import ValidationContext, analyze_callable
 from dhampyr.converter import Converter, ConverterFactory, SingleValueFactory
 from dhampyr.verifier import Verifier
 from dhampyr.validator import Validator, ValidatorFactory
@@ -8,7 +8,7 @@ from dhampyr.validator import Validator, ValidatorFactory
 
 class TestPositive:
     def test_positive(self):
-        v = Validator(Converter("test", lambda x:x, False), [])
+        v = Validator(Converter("test", analyze_callable(lambda x:x), False), [])
         assert v.requirement.missing == RequirementPolicy.SKIP
         assert v.requirement.null == RequirementPolicy.CONTEXTUAL
         assert v.requirement.empty == RequirementPolicy.CONTEXTUAL
@@ -21,7 +21,7 @@ class TestPositive:
 class TestRequirement:
     def _validator(self):
         return Validator(
-            Converter("conv", lambda x:x, False),
+            Converter("conv", analyze_callable(lambda x:x), False),
             [],
         )
 
@@ -109,7 +109,7 @@ class TestRequirement:
 class TestConvert:
     def _validator(self):
         return Validator(
-            Converter("conv", int, False),
+            Converter("conv", analyze_callable(int), False),
             [],
         )
 
@@ -138,7 +138,7 @@ class TestConvert:
 class TestIterativeConvert:
     def _validator(self):
         return Validator(
-            Converter("conv", int, True),
+            Converter("conv", analyze_callable(int), True),
             [],
         )
 
@@ -178,7 +178,7 @@ class TestIterativeConvert:
 class TestVerify:
     def _validator(self):
         return Validator(
-            Converter("conv", lambda x:x, False),
+            Converter("conv", analyze_callable(lambda x:x), False),
             [Verifier("gt", lambda x: x > 0, False), Verifier("lt", lambda x: x < 10, False)],
         )
 
@@ -214,7 +214,7 @@ class TestVerify:
 class TestIterativeVerify:
     def _validator(self):
         return Validator(
-            Converter("conv", lambda x:x, False),
+            Converter("conv", analyze_callable(lambda x:x), False),
             [Verifier("gt", lambda x: x > 0, True), Verifier("lt", lambda x: x < 10, True)],
         )
 
@@ -269,7 +269,7 @@ class TestIterativeVerify:
 
 class TestFactory:
     def _factory(self):
-        return ValidatorFactory(SingleValueFactory("test", lambda cxt: lambda x: 0, False), [])
+        return ValidatorFactory(SingleValueFactory("test", lambda cxt: analyze_callable(lambda x: 0), False), [])
 
     def test_factory(self):
         f = self._factory()

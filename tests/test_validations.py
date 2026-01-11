@@ -18,7 +18,7 @@ class TestParse:
         v5 = v(..., default=5) / ... & None
 
     def test_parse(self):
-        vs = parse_validators(TestParse.Requirement)
+        vs = parse_validators(TestParse.Requirement).validators
         assert set(vs.keys()) == {"v3", "v4", "v5"}
 
 

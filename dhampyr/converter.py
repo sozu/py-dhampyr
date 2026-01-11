@@ -1,9 +1,9 @@
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from functools import cached_property
 import inspect
 from typing import Any, TypeVar, Generic, Optional, Union, Protocol
 from dhampyr.builtins import Any
-from .context import ValidationContext, analyze_callable, ContextualCallable
+from .context import ValidationContext, analyze_callable, Parameter, ContextualCallable, _signature
 from .failures import ValidationFailure, CompositeValidationFailure, PartialFailure
 from .builtins import *
 from .util import get_self_args, isinstance_safe
@@ -17,7 +17,7 @@ class ConversionFailure(ValidationFailure):
     """
     Represents a failure which arised in conversion phase.
     """
-    def __init__(self, message, converter):
+    def __init__(self, message, converter: 'Converter'):
         super().__init__(
             name=converter.name,
             message=message,
@@ -34,7 +34,7 @@ class Converter(Generic[T, V]):
     Do not create the instance directly, use `ConverterFactory` instead
     because available input which determines validation schema can be changed by configurations in context.
     """
-    def __init__(self, name: str, func: Callable, is_iter: bool, *args, **kwargs):
+    def __init__(self, name: str, func: ContextualCallable, is_iter: bool, *args, **kwargs):
         #: The name of the converter used for error message.
         self.name = name
         #: Function converting a value.
@@ -70,24 +70,8 @@ class Converter(Generic[T, V]):
         Returns:
             If conversion succeeds, converted value and `None`, otherwise, `None` and failure object.
         """
-        def conv(v, i=None):
-            try:
-                cc = self.func if isinstance(self.func, ContextualCallable) else analyze_callable(self.func)
-                if context and i is not None:
-                    with context[i, True] as c:
-                        return cc(v, c), None
-                else:
-                    # REVIEW: How to generate empty context?
-                    return cc(v, context or ValidationContext()), None
-            except PartialFailure as e:
-                return None, e.create(converter=self)
-            except ValidationFailure as e:
-                return None, e
-            except Exception as e:
-                return None, ConversionFailure(str(e), self)
-
         if self.is_iter:
-            results = [conv(v, i) for i, v in enumerate(value)]
+            results = [_convert(context, self, v, i) for i, v in enumerate(value)]
             failures = [(i, f) for i, (v, f) in enumerate(results) if f is not None]
             if len(failures) == 0:
                 return [v for v,f in results], None
@@ -100,7 +84,23 @@ class Converter(Generic[T, V]):
                 else:
                     return None, composite
         else:
-            return conv(value)
+            return _convert(context, self, value)
+
+
+def _convert(context: Optional[ValidationContext], converter: Converter, v: Any, i=None):
+    try:
+        if context and i is not None:
+            with context.child(i, True) as c:
+                return converter.func(v, c), None
+        else:
+            # REVIEW: How to generate empty context?
+            return converter.func(v, context or ValidationContext()), None
+    except PartialFailure as e:
+        return None, e.create(converter=converter)
+    except ValidationFailure as e:
+        return None, e
+    except Exception as e:
+        return None, ConversionFailure(str(e), converter)
 
 
 class ConverterFactory(Protocol):
@@ -114,7 +114,7 @@ class SingleValueFactory(ConverterFactory):
     def __init__(
         self,
         name: str,
-        func: Callable[[ValidationContext], Callable],
+        func: Callable[[ValidationContext], ContextualCallable],
         *args,
         **kwargs,
     ) -> None:
@@ -124,8 +124,7 @@ class SingleValueFactory(ConverterFactory):
         self.kwargs: Any = kwargs
 
     def create(self, context: ValidationContext) -> Converter:
-        call = self.func(context)
-        cc = call if isinstance(call, ContextualCallable) else analyze_callable(call)
+        cc = self.func(context)
         return Converter[cc.in_type, cc.out_type](self.name, cc, False, *self.args, **self.kwargs)
 
 
@@ -151,6 +150,9 @@ class ListFactory(ConverterFactory):
 class OptionalFactory(ConverterFactory):
     def __init__(self, base: ConverterFactory) -> None:
         self.base = base
+        def _conv(v: Any, cxt: ValidationContext) -> Any: # type: ignore
+            raise NotImplementedError()
+        self._signature = _signature(_conv)
 
     @property
     def args(self) -> Any:
@@ -160,21 +162,32 @@ class OptionalFactory(ConverterFactory):
     def kwargs(self) -> Any:
         return self.base.kwargs
 
-    def _create(self, conv: Converter, in_type: Any, out_type: Any) -> Callable:
-        def _conv(v: in_type, cxt: ValidationContext) -> out_type:
+    def _create(self, converter: Converter, in_type: Any, out_type: Any) -> Callable:
+        def _conv(v: in_type, cxt: ValidationContext) -> out_type: # type: ignore
             if v is None:
                 return None
             else:
-                return conv.func(v, cxt)
+                return converter.func(v, cxt)
         return _conv
 
     def create(self, context: ValidationContext) -> Converter:
         converter = self.base.create(context)
         in_type = Optional[converter.accepts]
         out_type = Optional[converter.returns]
+        func = self._create(converter, in_type, out_type)
+        cc = ContextualCallable[in_type, out_type](
+            func, 
+            Parameter('v', inspect.Parameter.POSITIONAL_ONLY),
+            [Parameter('cxt', inspect.Parameter.POSITIONAL_ONLY)],
+        )
+        # Set here to avoid analyzing again.
+        cc._signature = self._signature.replace(parameters=[
+            inspect.Parameter('v', inspect.Parameter.POSITIONAL_ONLY, annotation=in_type),
+            self._signature.parameters['cxt'],
+        ], return_annotation=out_type)
         return Converter[in_type, out_type](
             converter.name,
-            self._create(converter, in_type, out_type),
+            cc,
             converter.is_iter,
             *self.base.args, **self.base.kwargs,
         )
@@ -186,7 +199,8 @@ def get_factory(
     *args,
     **kwargs,
 ) -> ConverterFactory:
-    return SingleValueFactory(name, lambda cxt: func, *args, **kwargs)
+    cc = analyze_callable(func)
+    return SingleValueFactory(name, lambda cxt: cc, *args, **kwargs)
 
 
 def get_user_factory(t: type, name: Optional[str], create: Callable[[Any, ValidationContext], Any]) -> ConverterFactory:
@@ -196,33 +210,35 @@ def get_user_factory(t: type, name: Optional[str], create: Callable[[Any, Valida
     Args:
         t: User defined type.
         name: Name of the converter. If `None` , type name is used.
-        is_iter: Flag to interpret input value as iterable object.
-        is_optional: Whether the converter can return `None` .
-        create: Callable to generate the instance. The signature of this is used for type parameters of the converter.
+        create: Callable to generate the instance. Its signature is used to determine a type parameter of the converter.
     Returns:
         Created factory.
     """
-    def _create(t: Any, union: Any, create: Callable[[Any, ValidationContext], Any]) -> Callable:
-        def conv(v: union, cxt: ValidationContext) -> t:
+    def _create(t_: type, union_: type, create: Callable[[Any, ValidationContext], Any]) -> Callable:
+        def conv(v: union_, cxt: ValidationContext) -> t_: # type: ignore
             if isinstance_safe(v, t):
                 return v
             return create(v, cxt)
         return conv
 
-    def conv(cxt: ValidationContext) -> Callable:
-        if cxt.config.strict:
-            def check(v: t, cxt: ValidationContext) -> t:
-                if isinstance_safe(v, t):
-                    return v
-                else:
-                    raise PartialFailure(lambda converter: ConversionFailure(f"Input must be a instance of {t} but {type(v)}.", converter))
-            return check
+    def strict(v: t, cxt: ValidationContext) -> t: # type: ignore
+        if isinstance_safe(v, t):
+            return v
         else:
-            union = t
-            in_t = next(iter(inspect.signature(create).parameters.values())).annotation
-            if in_t != inspect.Parameter.empty:
-                union = Union[t, in_t]
-            return _create(t, union, create)
+            raise PartialFailure(lambda converter: ConversionFailure(f"Input must be a instance of {t} but {type(v)}.", converter))
+    strict_cc = analyze_callable(strict)
+
+    union = t
+    in_t = next(iter(inspect.signature(create).parameters.values())).annotation
+    if in_t != inspect.Parameter.empty:
+        union = Union[t, in_t]
+    cc = analyze_callable(_create(t, union, create))
+
+    def conv(cxt: ValidationContext) -> ContextualCallable:
+        if cxt.config.strict:
+            return strict_cc
+        else:
+            return cc
     return SingleValueFactory(name or t.__name__, conv)
 
 
@@ -233,22 +249,21 @@ def get_builtin_factory(t: Any, name: Optional[str]) -> Optional[ConverterFactor
     Args:
         t: A builtin type.
         name: Name of the converter. If `None` , type name is used.
-        is_iter: Flag to interpret input value as iterable object.
-        is_optional: Whether the converter can return `None` .
     Returns:
-        Created factory.
+        Created factory. `None` if `t` is not a builtin type.
     """
     if t not in builtin_conversions:
         return None
 
     n, func = builtin_conversions[t]
 
-    def conv(cxt: ValidationContext) -> Callable:
+    cc = analyze_callable(func)
+    strict_cc = analyze_callable(convert_strict(t, False))
+
+    def conv(cxt: ValidationContext) -> ContextualCallable:
         if cxt.config.strict_builtin:
-            return convert_strict(t, False)
+            return strict_cc
         else:
-            sig = inspect.signature(func)
-            _, in_t = next(iter(sig.parameters.items()))
-            return func
+            return cc
 
     return SingleValueFactory(name or n, conv)

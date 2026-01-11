@@ -73,10 +73,10 @@ class ValidationConfiguration:
 
     def derive(self, **settings: Unpack[Configurable]) -> 'ValidationConfiguration':
         """
-        Creates new configuration instance deriving this configuration.
+        Creates new configuration instance by deriving this configuration.
 
         Args:
-            settings: Configuration parameters which overwrites values in this instance.
+            settings: Configuration parameters which overwrite values in this instance.
         Returns:
             Derived configuration object.
         """
@@ -86,6 +86,12 @@ class ValidationConfiguration:
         return derived
 
     def set(self, **settings: Unpack[Configurable]) -> None:
+        """
+        Updates this configuration instance.
+
+        Args:
+            settings: Configuration parameters which overwrite values in this instance.
+        """
         self._check_fields(**settings)
         for k, v in settings.items():
             setattr(self, k, v)
@@ -155,16 +161,16 @@ class ConfigurationStack:
 
     def __getattr__(self, key: str) -> Any:
         """
-        Returns configuration of passed key found first in stack.
+        Returns a configuration value of passed key found first in stack.
         """
-        for config in self.stack[::-1]:
+        for config in reversed(self.stack):
             if key in config:
                 return config[key]
         return getattr(self.base, key)
 
     def on(self, t: type) -> ValidationConfiguration:
         """
-        Returns configuration for passed type.
+        Returns configurations for passed type.
 
         If specific configuration for the type is registered,
         it is pushed at the top of the stack for later validations in propagated types.

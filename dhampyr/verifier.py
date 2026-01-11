@@ -44,6 +44,7 @@ class Verifier(Generic[V]):
         self.message = message
         self.args = args
         self.kwargs = kwargs
+        self._cc = self.func if isinstance(self.func, ContextualCallable) else analyze_callable(self.func)
 
     def verify(self, value: Any, context: Optional[ValidationContext] = None) -> Optional[ValidationFailure]:
         """
@@ -55,25 +56,8 @@ class Verifier(Generic[V]):
         Returns:
             A failure which arised in the verification. When it succeeded, `None`.
         """
-        def ver(v, i=None):
-            try:
-                cc = self.func if isinstance(self.func, ContextualCallable) else analyze_callable(self.func)
-                if context and i is not None:
-                    with context[i, True] as c:
-                        r = cc(v, c)
-                else:
-                    # REVIEW: How to generate empty context?
-                    r = cc(v, context or ValidationContext())
-                return None if r else VerificationFailure(f"Verification by {self.name} failed.", self)
-            except PartialFailure as e:
-                return e.create(verifier=self)
-            except ValidationFailure as e:
-                return e
-            except Exception as e:
-                return VerificationFailure(str(e), self)
-
         if self.is_iter:
-            failures = [(i, f) for i, f in [(i, ver(v, i)) for i, v in enumerate(value)] if f is not None]
+            failures = [(i, f) for i, f in [(i, _verify(context, self, v, i)) for i, v in enumerate(value)] if f is not None]
             if len(failures) == 0:
                 return None
             else:
@@ -82,4 +66,21 @@ class Verifier(Generic[V]):
                     composite.add(i, f)
                 return composite
         else:
-            return ver(value)
+            return _verify(context, self, value)
+
+
+def _verify(context: Optional[ValidationContext], verifier: Verifier, v: Any, i=None):
+    try:
+        if context and i is not None:
+            with context.child(i, True) as c:
+                r = verifier._cc(v, c)
+        else:
+            # REVIEW: How to generate empty context?
+            r = verifier._cc(v, context or ValidationContext())
+        return None if r else VerificationFailure(f"Verification by {verifier.name} failed.", verifier)
+    except PartialFailure as e:
+        return e.create(verifier=verifier)
+    except ValidationFailure as e:
+        return e
+    except Exception as e:
+        return VerificationFailure(str(e), verifier)

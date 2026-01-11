@@ -1,6 +1,5 @@
 from collections.abc import Callable
 from datetime import date, datetime, time, timedelta
-from enum import Enum
 import re
 from typing import Any, Union, Optional
 from decimal import Decimal
@@ -41,7 +40,7 @@ strict_conversions: dict[type, dict[type, Callable[[Any], Any]]] = {
 
 
 def _strict(t: Any, union: Any, is_optional: bool, conversions: dict[type, Callable]) -> Callable:
-    def conv(v: (Optional[union] if is_optional else union)) -> (Optional[t] if is_optional else t):
+    def conv(v: (Optional[union] if is_optional else union)) -> (Optional[t] if is_optional else t): # type: ignore
         if isinstance_safe(v, t):
             return v
         elif v is None and is_optional:
@@ -218,7 +217,7 @@ def get_enum_conversion(t: type, holder: dict[type, Callable] = {}) -> tuple[str
     if key in holder:
         return t.__name__, holder[key]
     else:
-        def conv(v: Union[t, str]) -> t:
+        def conv(v: Union[t, str]) -> t: # type: ignore
             if isinstance_safe(v, t):
                 return v
             else:
@@ -227,7 +226,7 @@ def get_enum_conversion(t: type, holder: dict[type, Callable] = {}) -> tuple[str
 
 
 builtin_conversions: dict[type, tuple[str, Callable[[Any], Any]]] = {
-    Any: ('any', _noop),
+    Any: ('any', _noop), # type: ignore
     bool: ('bool', convert_bool()),
     int: ('int', convert_int()),
     float: ('float', convert_float()),
