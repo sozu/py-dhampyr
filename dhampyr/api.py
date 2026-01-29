@@ -529,7 +529,7 @@ def validate_dict(cls: Union[type[T], ParsedValidators], values: Any, context: O
     ```
     """
     context = context or ValidationContext()
-    validators = cls if isinstance(cls, ParsedValidators) else parse_validators(cls)
+    validators, cls = (cls, cls.cls) if isinstance(cls, ParsedValidators) else (parse_validators(cls), cls)
 
     with context.on(validators.cls):
         try:

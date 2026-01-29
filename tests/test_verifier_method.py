@@ -1,5 +1,5 @@
 import pytest
-from dhampyr.api import v, validate_dict, validate, validatable
+from dhampyr.api import v, validate_dict, validate, validatable, parse_validators
 from dhampyr.context import ValidationContext
 
 
@@ -66,9 +66,9 @@ class TestNoDependency:
 
 class TestDependency:
     class V:
-        v1: +v(int)
-        v2: +v(int)
-        v3: +v(int)
+        v1: int = +v()
+        v2: int = +v()
+        v3: int = +v()
 
         @validate()
         def ver1(self):
@@ -97,6 +97,12 @@ class TestDependency:
 
     def test_all_method_failed(self):
         r = validate_dict(TestDependency.V, dict(v1=0, v2=0, v3=0))
+        assert not bool(r)
+        assert {str(p) for p, _ in r.failures} == {"ver1", "ver2", "ver3", "ver4"}
+
+    def test_parsed_validator(self):
+        p = parse_validators(TestDependency.V)
+        r = validate_dict(p, dict(v1=0, v2=0, v3=0))
         assert not bool(r)
         assert {str(p) for p, _ in r.failures} == {"ver1", "ver2", "ver3", "ver4"}
 
